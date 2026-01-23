@@ -24,7 +24,17 @@ blueprint:
       description: Lista urządzeń mobilnych do powiadomień (opcjonalne)
       default: []
       selector:
-        target: {}
+        target:
+          entity:
+            domain: mobile_app
+    flood_sensors:
+      name: Czujniki zalania
+      description: Wybierz czujniki zalania, które mają wywoływać powiadomienia
+      default: []
+      selector:
+        target:
+          entity:
+            domain: binary_sensor
     soften_enabled:
       name: Uwzględnij zmiękczacz
       description: Czy uwzględniać regenerację złoża zmiękczacza
@@ -67,8 +77,10 @@ action:
       end: "{{ input.soften_end }}"
       avg_flow: "{{ input.soften_avg_flow }}"
       devices: "{{ input.notify_devices }}"
+      floods: "{{ input.flood_sensors }}"
+
+  # Regeneracja zmiękczacza
   - choose:
-      # Blok dla regeneracji zmiękczacza
       - conditions:
           - "{{ soften and (now().strftime('%H:%M') >= start) and (now().strftime('%H:%M') <= end) }}"
         sequence:
@@ -87,31 +99,52 @@ action:
                           - service: notify.mobile_app
                             data:
                               target: "{{ devices }}"
-                              message: "Nieoczekiwany pobór podczas regeneracji: {{ water }} {{ unit }} (normalnie {{ avg_flow }} ±25L)"
-              - default:
-                  - choose:
-                      - conditions: "{{ devices | length > 0 }}"
-                        sequence:
-                          - service: notify.mobile_app
-                            data:
-                              target: "{{ devices }}"
-                              message: "Prawdopodobna regeneracja zmiękczacza: pobór w normie {{ water }} {{ unit }}"
+                              message: "Nieoczekiwany pobór podczas regeneracji: {{ water }} {{ unit }} (norma {{ avg_flow }} ±25L)"
+              - choose:
+                  - conditions: "{{ devices | length > 0 }}"
+                    sequence:
+                      - service: notify.mobile_app
+                        data:
+                          target: "{{ devices }}"
+                          message: "Prawdopodobna regeneracja zmiękczacza: pobór w normie {{ water }} {{ unit }}"
 
-      # Blok dla standardowego wycieku
-      - default:
+  # Standardowy wyciek
+  - choose:
+      - conditions: "{{ water > 10 }}" # próg wycieku L/h
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id:
+                - input_boolean.dzienny_wyciek_podejrzenie
+                - input_boolean.nocny_wyciek_podejrzenie
           - choose:
-              - conditions: "{{ water > 10 }}" # próg wycieku w L/h
+              - conditions: "{{ devices | length > 0 }}"
                 sequence:
-                  - service: input_boolean.turn_on
-                    target:
-                      entity_id:
-                        - input_boolean.dzienny_wyciek_podejrzenie
-                        - input_boolean.nocny_wyciek_podejrzenie
-                  - choose:
-                      - conditions: "{{ devices | length > 0 }}"
-                        sequence:
-                          - service: notify.mobile_app
-                            data:
-                              target: "{{ devices }}"
-                              message: "Podejrzenie wycieku: pobór wody {{ water }} {{ unit }}"
+                  - service: notify.mobile_app
+                    data:
+                      target: "{{ devices }}"
+                      message: "Podejrzenie wycieku: pobór wody {{ water }} {{ unit }}"
+
+  # Czujniki zalania
+  - choose:
+      - conditions: "{{ floods | length > 0 }}"
+        sequence:
+          - repeat:
+              count: "{{ floods | length }}"
+              sequence:
+                - variables:
+                    flood_sensor: "{{ floods[repeat.index0] }}"
+                - choose:
+                    - conditions: "{{ is_state(flood_sensor, 'on') }}"
+                      sequence:
+                        - service: input_boolean.turn_on
+                          target:
+                            entity_id: input_boolean.nocny_wyciek_podejrzenie
+                        - choose:
+                            - conditions: "{{ devices | length > 0 }}"
+                              sequence:
+                                - service: notify.mobile_app
+                                  data:
+                                    target: "{{ devices }}"
+                                    message: "Czujnik zalania {{ flood_sensor }} wykrył wodę!"
 
