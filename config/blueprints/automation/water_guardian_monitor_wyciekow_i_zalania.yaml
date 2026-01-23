@@ -98,7 +98,7 @@ variables:
 action:
 
   ##################################################
-  # 🚨 ZALANIE – NATYCHMIAST
+  # 1️⃣ ZALANIE – natychmiast
   ##################################################
   - choose:
       - conditions:
@@ -121,18 +121,18 @@ action:
                       {% for s in flood_sensors_list if is_state(s,'on') %}
                       • {{ state_attr(s,'friendly_name') or s }}
                       {% endfor %}
-          default:
-            - service: persistent_notification.create
-              data:
-                title: "🚨 ZALANIE – brak telefonu"
-                message: >
-                  Aktywne czujniki:
-                  {% for s in flood_sensors_list if is_state(s,'on') %}
-                  • {{ state_attr(s,'friendly_name') or s }}
-                  {% endfor %}
+  default:
+    - service: persistent_notification.create
+      data:
+        title: "🚨 ZALANIE – brak telefonu"
+        message: >
+          Aktywne czujniki:
+          {% for s in flood_sensors_list if is_state(s,'on') %}
+          • {{ state_attr(s,'friendly_name') or s }}
+          {% endfor %}
 
   ##################################################
-  # ⚠️ Podejrzenie wycieku / zmiękczacz
+  # 2️⃣ Podejrzenie wycieku / zmiękczacz
   ##################################################
   - choose:
       - conditions:
@@ -156,37 +156,29 @@ action:
                             message: >
                               Pobór {{ water_lph | round(1) }} L/h
                               odpowiada regeneracji zmiękczacza.
-                  default:
-                    - service: persistent_notification.create
-                      data:
-                        title: "⚠️ Regeneracja zmiękczacza"
-                        message: >
-                          Pobór {{ water_lph | round(1) }} L/h
-                          odpowiada regeneracji zmiękczacza.
-
-          default:
-            - choose:
-                - conditions:
-                    - condition: template
-                      value_template: "{{ notify_device_id != None }}"
-                  sequence:
-                    - device_id: !input notify_device
-                      domain: mobile_app
-                      type: notify
-                      title: "⚠️ PODEJRZENIE WYCIEKU WODY"
-                      message: >
-                        Pobór {{ water_lph | round(1) }} L/h
-                        przekracza średnią {{ avg_hourly | round(1) }} L/h
-            default:
-              - service: persistent_notification.create
-                data:
-                  title: "⚠️ PODEJRZENIE WYCIEKU WODY"
-                  message: >
-                    Pobór {{ water_lph | round(1) }} L/h
-                    przekracza średnią {{ avg_hourly | round(1) }} L/h
+  default:
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ notify_device_id != None }}"
+          sequence:
+            - device_id: !input notify_device
+              domain: mobile_app
+              type: notify
+              title: "⚠️ PODEJRZENIE WYCIEKU WODY"
+              message: >
+                Pobór {{ water_lph | round(1) }} L/h
+                przekracza średnią {{ avg_hourly | round(1) }} L/h
+  default:
+    - service: persistent_notification.create
+      data:
+        title: "⚠️ PODEJRZENIE WYCIEKU WODY"
+        message: >
+          Pobór {{ water_lph | round(1) }} L/h
+          przekracza średnią {{ avg_hourly | round(1) }} L/h
 
   ##################################################
-  # 🧠 UCZENIE ŚREDNIEJ GODZINOWEJ (14 dni)
+  # 3️⃣ Aktualizacja średniej godzinowej (14 dni)
   ##################################################
   - service: input_number.set_value
     target:
