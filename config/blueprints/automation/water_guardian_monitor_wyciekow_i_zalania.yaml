@@ -88,16 +88,16 @@ trigger:
 
 variables:
   current_hour: "{{ now().hour }}"
-  water_l_min_mean: "{{ state_attr(input.water_sensor, 'mean') | float(0) }}"
+  water_l_min_mean: "{{ state_attr(!input water_sensor, 'mean') | float(0) }}"
   water_lph: "{{ water_l_min_mean * 60 }}"
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
-  threshold_l: "{{ input.leak_threshold_lph }}"
+  threshold_l: "{{ !input leak_threshold_lph }}"
   now_time: "{{ now().strftime('%H:%M') }}"
-  soften_enabled: "{{ input.soften_enabled }}"
-  soften_start: "{{ input.soften_start }}"
-  soften_end: "{{ input.soften_end }}"
-  soften_min: "{{ input.soften_avg_liters - 25 }}"
-  soften_max: "{{ input.soften_avg_liters + 25 }}"
+  soften_enabled: "{{ !input soften_enabled }}"
+  soften_start: "{{ !input soften_start }}"
+  soften_end: "{{ !input soften_end }}"
+  soften_min: "{{ !input soften_avg_liters - 25 }}"
+  soften_max: "{{ !input !input soften_avg_liters + 25 }}"
   in_soften_window: >
     {{ soften_enabled and soften_start <= now_time <= soften_end }}
 
@@ -107,7 +107,9 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ flood_sensors | length > 0 and flood_sensors | selectattr('state','eq','on') | list | length > 0 }}"
+            value_template: >
+              {{ !input flood_sensors | length > 0 and
+                 !input flood_sensors | selectattr('state','eq','on') | list | length > 0 }}
         sequence:
           - service: notify.mobile_app
             data:
@@ -115,7 +117,7 @@ action:
               title: "💧 ZALANIE!"
               message: >
                 Wykryto zalanie w jednym z czujników: 
-                {% for sensor in flood_sensors if is_state(sensor, 'on') %}{{ sensor }} {% endfor %}
+                {% for sensor in !input flood_sensors if is_state(sensor, 'on') %}{{ sensor }} {% endfor %}
 
   # Podejrzenie wycieku
   - choose:
