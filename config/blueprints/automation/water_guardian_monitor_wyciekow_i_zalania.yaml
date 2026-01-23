@@ -46,11 +46,11 @@ blueprint:
           multiple: true
 
     notify_devices:
-      name: Urządzenia mobilne do powiadomień
-      description: Wybierz urządzenia z integracji mobile_app
+      name: Powiadomienia (notify)
+      description: Lista encji notify do powiadomień push
       selector:
-        device:
-          integration: mobile_app
+        entity:
+          domain: notify
           multiple: true
 
     soften_enabled:
@@ -107,24 +107,21 @@ variables:
   soften_max: "{{ input.soften_avg_liters + 25 }}"
   in_soften_window: >
     {{ soften_enabled and soften_start <= now_time <= soften_end }}
-  devices_list: "{{ input.notify_devices }}"
+  notify_list: "{{ input.notify_devices }}"
 
 action:
 
-  # Czujniki zalania – tylko jeśli lista nie jest pusta
+  # Czujniki zalania – powiadomienie na wszystkie encje notify w liście
   - choose:
       - conditions:
           - condition: template
             value_template: "{{ flood_sensors | length > 0 and trigger.entity_id in flood_sensors }}"
         sequence:
-          - repeat:
-              count: "{{ devices_list | length }}"
-              sequence:
-                - device_id: "{{ devices_list[repeat.index - 1] }}"
-                  domain: mobile_app
-                  type: notify
-                  title: "💧 ZALANIE!"
-                  message: "Wykryto zalanie przez czujnik {{ trigger.entity_id }}"
+          - service: notify.notify
+            data:
+              title: "💧 ZALANIE!"
+              message: "Wykryto zalanie przez czujnik {{ trigger.entity_id }}"
+              target: !input notify_devices
 
   # Podejrzenie wycieku wody
   - choose:
@@ -138,27 +135,21 @@ action:
                   - condition: template
                     value_template: "{{ in_soften_window and soften_min <= water_lph <= soften_max }}"
                 sequence:
-                  - repeat:
-                      count: "{{ devices_list | length }}"
-                      sequence:
-                        - device_id: "{{ devices_list[repeat.index - 1] }}"
-                          domain: mobile_app
-                          type: notify
-                          title: "🚿 Pobór wody – możliwa regeneracja"
-                          message: >
-                            Wykryto pobór {{ water_lph | round(1) }} L/h.
-                            Zakres odpowiada regeneracji zmiękczacza.
-            default:
-              - repeat:
-                  count: "{{ devices_list | length }}"
-                  sequence:
-                    - device_id: "{{ devices_list[repeat.index - 1] }}"
-                      domain: mobile_app
-                      type: notify
-                      title: "🚨 PODEJRZENIE WYCIEKU WODY"
+                  - service: notify.notify
+                    data:
+                      title: "🚿 Pobór wody – możliwa regeneracja"
                       message: >
-                        Chwilowy pobór {{ water_lph | round(1) }} L/h
-                        przekracza średnią godzinową {{ avg_hourly | round(1) }} L/h.
+                        Wykryto pobór {{ water_lph | round(1) }} L/h.
+                        Zakres odpowiada regeneracji zmiękczacza.
+                      target: !input notify_devices
+            default:
+              - service: notify.notify
+                data:
+                  title: "🚨 PODEJRZENIE WYCIEKU WODY"
+                  message: >
+                    Chwilowy pobór {{ water_lph | round(1) }} L/h
+                    przekracza średnią godzinową {{ avg_hourly | round(1) }} L/h.
+                  target: !input notify_devices
 
   # Aktualizacja średniej godzinowej 14-dniowej
   - service: input_number.set_value
