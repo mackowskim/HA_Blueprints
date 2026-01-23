@@ -17,7 +17,7 @@ blueprint:
 
     water_unit:
       name: Jednostka sensora
-      default: L
+      default: l
       selector:
         select:
           options:
@@ -95,7 +95,7 @@ trigger:
 
 variables:
   current_hour: "{{ now().hour }}"
-  water_l_min_mean: "{{ state_attr(!input water_sensor, 'mean') | float(0) }}"
+  water_l_min_mean: "{{ state_attr(input.water_sensor, 'mean') | float(0) }}"
   water_lph: "{{ water_l_min_mean * 60 }}"
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
   threshold_l: !input leak_threshold_lph
