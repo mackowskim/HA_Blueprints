@@ -98,16 +98,16 @@ variables:
   water_l_min_mean: "{{ state_attr(input.water_sensor, 'mean') | float(0) }}"
   water_lph: "{{ water_l_min_mean * 60 }}"
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
-  threshold_l: !input leak_threshold_lph
+  threshold_l: "{{ input.leak_threshold_lph }}"
   now_time: "{{ now().strftime('%H:%M') }}"
-  soften_enabled: !input soften_enabled
-  soften_start: !input soften_start
-  soften_end: !input soften_end
-  soften_min: "{{ !input soften_avg_liters - 25 }}"
-  soften_max: "{{ !input soften_avg_liters + 25 }}"
+  soften_enabled: "{{ input.soften_enabled }}"
+  soften_start: "{{ input.soften_start }}"
+  soften_end: "{{ input.soften_end }}"
+  soften_min: "{{ input.soften_avg_liters - 25 }}"
+  soften_max: "{{ input.soften_avg_liters + 25 }}"
   in_soften_window: >
     {{ soften_enabled and soften_start <= now_time <= soften_end }}
-  devices_list: !input notify_devices
+  devices_list: "{{ input.notify_devices }}"
 
 action:
 
