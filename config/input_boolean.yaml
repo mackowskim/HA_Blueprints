@@ -1,0 +1,9 @@
+dzienny_wyciek_podejrzenie:
+  name: Dzienny podejrzenie wycieku
+  initial: off
+  icon: mdi:water-alert
+
+nocny_wyciek_podejrzenie:
+  name: Nocny podejrzenie wycieku
+  initial: off
+  icon: mdi:water-alert

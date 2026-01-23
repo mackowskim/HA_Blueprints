@@ -1,0 +1,193 @@
+# Średnie zużycie godzinowe w litrach
+zuzycie_wody_stat_0:
+  name: Średnia godzina 0
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_1:
+  name: Średnia godzina 1
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_2:
+  name: Średnia godzina 2
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_3:
+  name: Średnia godzina 3
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_4:
+  name: Średnia godzina 4
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_5:
+  name: Średnia godzina 5
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_6:
+  name: Średnia godzina 6
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_7:
+  name: Średnia godzina 7
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_8:
+  name: Średnia godzina 8
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_9:
+  name: Średnia godzina 9
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_10:
+  name: Średnia godzina 10
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_11:
+  name: Średnia godzina 11
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_12:
+  name: Średnia godzina 12
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_13:
+  name: Średnia godzina 13
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_14:
+  name: Średnia godzina 14
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_15:
+  name: Średnia godzina 15
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_16:
+  name: Średnia godzina 16
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_17:
+  name: Średnia godzina 17
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_18:
+  name: Średnia godzina 18
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_19:
+  name: Średnia godzina 19
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_20:
+  name: Średnia godzina 20
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_21:
+  name: Średnia godzina 21
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_22:
+  name: Średnia godzina 22
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+
+zuzycie_wody_stat_23:
+  name: Średnia godzina 23
+  initial: 0
+  min: 0
+  max: 1000
+  step: 0.1
+  unit_of_measurement: "L"
+

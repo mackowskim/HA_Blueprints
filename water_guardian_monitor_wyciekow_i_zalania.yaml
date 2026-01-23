@@ -1,0 +1,169 @@
+blueprint:
+  name: Water Guardian – monitor wycieków i zalania
+  description: >
+    Wykrywa możliwy wyciek wody w zadanym przedziale godzin w litrach,
+    uwzględnia opcjonalnie regenerację złoża zmiękczacza z tolerancją ±25 L,
+    reaguje na czujniki zalania i wysyła powiadomienia.
+    Automatycznie przelicza sensor w m³ na litry.
+  domain: automation
+  input:
+    sensor_wody:
+      name: Sensor zużycia wody
+      description: Sensor, którego wartości będą używane do monitorowania wycieków
+      selector:
+        entity:
+          domain: sensor
+
+    sensor_wody_jednostka:
+      name: Jednostka sensora wody
+      description: Wybierz jednostkę sensora
+      default: "L"
+      selector:
+        select:
+          options:
+            - "L"
+            - "m3"
+
+    uwzglednij_zmiekczacz:
+      name: Uwzględnij regenerację złoża zmiękczacza
+      description: Włącza uwzględnianie średniego poboru w czasie regeneracji
+      default: false
+      selector:
+        boolean:
+
+    devices_notify:
+      name: Urządzenia do powiadomień
+      description: Do których urządzeń będą wysyłane powiadomienia
+      selector:
+        target:
+          entity:
+            domain: device
+
+    godzina_start:
+      name: Początek przedziału monitorowania
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 23
+          step: 1
+
+    godzina_koniec:
+      name: Koniec przedziału monitorowania
+      default: 5
+      selector:
+        number:
+          min: 0
+          max: 23
+          step: 1
+
+    godzina_regeneracji_start:
+      name: Opcjonalna godzina startu regeneracji
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 23
+          step: 1
+
+    godzina_regeneracji_koniec:
+      name: Opcjonalna godzina końca regeneracji
+      default: 4
+      selector:
+        number:
+          min: 0
+          max: 23
+          step: 1
+
+    czujniki_zalania:
+      name: Czujniki zalania
+      description: Czujniki, które mają uruchamiać alarm zalania
+      selector:
+        target:
+          entity:
+            domain: binary_sensor
+
+trigger:
+  - platform: time_pattern
+    hours: "*"
+  - platform: state
+    entity_id: !input czujniki_zalania
+    to: "on"
+
+condition:
+  - condition: template
+    value_template: >
+      {{ input.godzina_start <= now().hour <= input.godzina_koniec }}
+
+action:
+  - variables:
+      h: "{{ now().hour | int }}"
+      sensor_value_raw: "{{ states(input.sensor_wody) | float }}"
+      current_usage: >
+        {% if input.sensor_wody_jednostka == 'm3' %}
+          {{ sensor_value_raw * 1000 }}
+        {% else %}
+          {{ sensor_value_raw }}
+        {% endif %}
+      w_regeneracji: "{{ input.uwzglednij_zmiekczacz and (input.godzina_regeneracji_start <= h <= input.godzina_regeneracji_koniec) }}"
+      zalanie_detected: >
+        {{ expand(input.czujniki_zalania) | selectattr('state','equalto','on') | list | count > 0 }}
+      regeneracja_srednia: >
+        {% if w_regeneracji %}
+          {% if h == 2 %}44
+          {% elif h == 3 %}55
+          {% elif h == 4 %}47
+          {% else %}0{% endif %}
+        {% else %}0{% endif %}
+      regeneracja_min: "{{ regeneracja_srednia - 25 }}"
+      regeneracja_max: "{{ regeneracja_srednia + 25 }}"
+      w_normie_regeneracji: "{{ w_regeneracji and (regeneracja_min <= current_usage <= regeneracja_max) }}"
+      prog: "{{ max(states('input_number.zuzycie_wody_stat_' ~ h)|float * 2, 10) }}"
+      anomaly: "{{ current_usage > prog }}"
+
+  - service: input_number.set_value
+    target:
+      entity_id: "input_number.zuzycie_wody_stat_{{ h }}"
+    data:
+      value: "{{ current_usage }}"
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ anomaly }}"
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: >
+                {% if input.godzina_start < 12 %}input_boolean.dzienny_wyciek_podejrzenie{% else %}input_boolean.nocny_wyciek_podejrzenie{% endif %}
+      - default:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: >
+                {% if input.godzina_start < 12 %}input_boolean.dzienny_wyciek_podejrzenie{% else %}input_boolean.nocny_wyciek_podejrzenie{% endif %}
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ anomaly or zalanie_detected or w_normie_regeneracji }}"
+        sequence:
+          - service: notify.mobile_app
+            target: "{{ input.devices_notify }}"
+            data:
+              title: >
+                {% if zalanie_detected %}🚨 Zalanie!{% elif w_normie_regeneracji %}⚠️ Pobór w normie regeneracji{% else %}🚨 Możliwy wyciek{% endif %}
+              message: >
+                {% if zalanie_detected %}
+                  Jeden lub więcej czujników zalania wykryło wodę!
+                {% elif w_normie_regeneracji %}
+                  Zużycie {{ current_usage }} L/h mieści się w zakresie ±25 L od średniego poboru złoża (regeneracja zmiękczacza).
+                {% else %}
+                  Zużycie {{ current_usage }} L/h przekracza nauczoną normę {{ prog }} L/h.
+                {% endif %}
+      - default:
+          - service: notify.mobile_app
+            target: "{{ input.devices_notify }}"
+            data:
+              title: "ℹ️ Zużycie w normie"
+              message: "Zużycie wody spadło poniżej progu, brak zalania."
+
