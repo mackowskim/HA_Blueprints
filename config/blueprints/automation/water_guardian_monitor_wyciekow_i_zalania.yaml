@@ -1,9 +1,9 @@
 blueprint:
-  name: Water Guardian – monitor wycieków i zalania (stabilny)
+  name: Water Guardian – monitor wycieków i zalania
   description: >
-    Monitoruje zużycie wody, wykrywa wycieki oraz reaguje na czujniki zalania.
-    Obsługuje opcjonalny zmiękczacz wody z regeneracją.
-    Blueprint zgodny z najlepszymi praktykami Home Assistant.
+    Monitor zużycia wody oraz czujników zalania.
+    Obsługuje liczniki w L lub m³ oraz opcjonalny zmiękczacz wody
+    (regeneracja oznaczana jako prawdopodobna, bez pauzowania alarmów).
   domain: automation
 
   input:
@@ -15,57 +15,14 @@ blueprint:
 
     water_unit:
       name: Jednostka sensora
-      description: Wybierz jednostkę, w której raportuje sensor
+      default: m3
       selector:
         select:
           options:
-            - L
-            - m3
-
-    notify_device:
-      name: Urządzenie do powiadomień
-      description: Wybierz urządzenie mobilne (aplikacja HA)
-      selector:
-        device:
-          integration: mobile_app
-
-    flood_sensors:
-      name: Czujniki zalania
-      description: Opcjonalne czujniki zalania
-      default: []
-      selector:
-        entity:
-          domain: binary_sensor
-          multiple: true
-
-    soften_enabled:
-      name: Zmiękczacz wody
-      description: Czy używasz zmiękczacza z regeneracją
-      default: false
-      selector:
-        boolean: {}
-
-    soften_start:
-      name: Początek regeneracji
-      default: "02:00"
-      selector:
-        time: {}
-
-    soften_end:
-      name: Koniec regeneracji
-      default: "05:00"
-      selector:
-        time: {}
-
-    soften_avg_liters:
-      name: Średnie zużycie regeneracji (L/h)
-      default: 50
-      selector:
-        number:
-          min: 10
-          max: 200
-          step: 1
-          unit_of_measurement: L
+            - label: "m³"
+              value: m3
+            - label: "litry"
+              value: l
 
     leak_threshold_lph:
       name: Próg wycieku (L/h)
@@ -73,9 +30,54 @@ blueprint:
       selector:
         number:
           min: 1
-          max: 100
+          max: 500
           step: 1
-          unit_of_measurement: L
+          unit_of_measurement: "L/h"
+
+    flood_sensors:
+      name: Czujniki zalania
+      default: []
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+
+    notify_devices:
+      name: Urządzenia do powiadomień (device_tracker)
+      selector:
+        entity:
+          domain: device_tracker
+          multiple: true
+
+    soften_enabled:
+      name: Zmiękczacz wody
+      default: false
+      selector:
+        boolean:
+
+    soften_start:
+      name: Godzina startu regeneracji
+      default: "02:00"
+      selector:
+        time:
+
+    soften_end:
+      name: Godzina końca regeneracji
+      default: "04:00"
+      selector:
+        time:
+
+    soften_avg_liters:
+      name: Średni pobór wody przy regeneracji (L)
+      default: 50
+      selector:
+        number:
+          min: 10
+          max: 500
+          step: 1
+          unit_of_measurement: "L"
+
+mode: single
 
 trigger:
   - platform: time_pattern
@@ -86,73 +88,73 @@ trigger:
     to: "on"
 
 variables:
-  water_raw: "{{ states(!input water_sensor) | float(0) }}"
+  water_sensor: !input water_sensor
+  water_unit: !input water_unit
+  leak_threshold_lph: !input leak_threshold_lph
+
+  soften_enabled: !input soften_enabled
+  soften_start: !input soften_start
+  soften_end: !input soften_end
+  soften_avg_liters: !input soften_avg_liters
+
+  water_raw: "{{ states(water_sensor) | float(0) }}"
+
   water_lph: >
-    {% if is_state('!input water_unit', 'm3') %}
+    {% if water_unit == 'm3' %}
       {{ water_raw * 1000 }}
     {% else %}
       {{ water_raw }}
     {% endif %}
 
-  soften_active: !input soften_enabled
-  soften_min: "{{ ( !input soften_avg_liters ) - 25 }}"
-  soften_max: "{{ ( !input soften_avg_liters ) + 25 }}"
   now_time: "{{ now().strftime('%H:%M') }}"
 
-condition: []
+  soften_min: "{{ soften_avg_liters - 25 }}"
+  soften_max: "{{ soften_avg_liters + 25 }}"
+
+  in_soften_window: >
+    {{ soften_enabled and
+       soften_start <= now_time <= soften_end }}
 
 action:
   - choose:
 
-      # 💧 Czujnik zalania
+      # === CZUJNIK ZALANIA ===
       - conditions:
-          - condition: template
-            value_template: >
-              {{ trigger.platform == 'state' }}
+          - condition: trigger
+            id: state
         sequence:
-          - device_id: !input notify_device
-            domain: mobile_app
-            type: notify
-            title: "🚨 ZALANIE"
-            message: >
-              Wykryto zalanie przez czujnik {{ trigger.entity_id }}
+          - service: notify.notify
+            data:
+              title: "💧 ZALANIE!"
+              message: "Wykryto zalanie – natychmiast sprawdź instalację."
 
-      # 🚿 Wysokie zużycie wody
+      # === WYCIEK WODY ===
       - conditions:
           - condition: template
-            value_template: >
-              {{ water_lph > ( !input leak_threshold_lph ) }}
+            value_template: "{{ water_lph >= leak_threshold_lph }}"
         sequence:
           - choose:
 
-              # 🧂 Prawdopodobna regeneracja zmiękczacza
+              # Regeneracja zmiękczacza (ostrzeżenie)
               - conditions:
                   - condition: template
                     value_template: >
-                      {{ soften_active
-                         and now_time >= !input soften_start
-                         and now_time <= !input soften_end
-                         and water_lph >= soften_min
-                         and water_lph <= soften_max }}
+                      {{ in_soften_window and
+                         soften_min <= water_lph <= soften_max }}
                 sequence:
-                  - device_id: !input notify_device
-                    domain: mobile_app
-                    type: notify
-                    title: "ℹ️ Zużycie wody"
-                    message: >
-                      Wykryto pobór {{ water_lph | round(1) }} L/h.
-                      Prawdopodobna regeneracja zmiękczacza.
+                  - service: notify.notify
+                    data:
+                      title: "🚿 Pobór wody – możliwa regeneracja"
+                      message: >
+                        Wykryto pobór {{ water_lph | round(1) }} L/h.
+                        Zakres odpowiada regeneracji zmiękczacza.
 
-              # 🚨 Podejrzenie wycieku
-              - conditions: []
-                sequence:
-                  - device_id: !input notify_device
-                    domain: mobile_app
-                    type: notify
-                    title: "🚨 Podejrzenie wycieku wody"
-                    message: >
-                      Stały pobór {{ water_lph | round(1) }} L/h
-                      przekracza próg {{ !input leak_threshold_lph }} L/h.
+            default:
+              - service: notify.notify
+                data:
+                  title: "🚨 PODEJRZENIE WYCIEKU WODY"
+                  message: >
+                    Stały pobór {{ water_lph | round(1) }} L/h
+                    przekracza próg {{ leak_threshold_lph }} L/h.
 
-mode: single
 
