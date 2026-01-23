@@ -1,11 +1,7 @@
 blueprint:
   name: water_guardian_monitor_wyciekow_i_zalania
   description: >
-    Monitor wycieków i zalania z obsługą zmiękczacza.
-    - Stały pobór wody i prognozowanie wycieków
-    - Wykrywanie zalania (opcjonalne czujniki)
-    - Obsługa zmiękczacza wody
-    - Powiadomienia mobilne lub persistent notification
+    Monitor wycieków i zalania z obsługą zmiękczacza i powiadomień.
   domain: automation
 
   input:
@@ -125,25 +121,24 @@ action:
                       {% for s in flood_sensors_list if is_state(s,'on') %}
                       • {{ state_attr(s,'friendly_name') or s }}
                       {% endfor %}
-              - default:
-                  - service: persistent_notification.create
-                    data:
-                      title: "🚨 ZALANIE – brak telefonu"
-                      message: >
-                        Aktywne czujniki:
-                        {% for s in flood_sensors_list if is_state(s,'on') %}
-                        • {{ state_attr(s,'friendly_name') or s }}
-                        {% endfor %}
+          default:
+            - service: persistent_notification.create
+              data:
+                title: "🚨 ZALANIE – brak telefonu"
+                message: >
+                  Aktywne czujniki:
+                  {% for s in flood_sensors_list if is_state(s,'on') %}
+                  • {{ state_attr(s,'friendly_name') or s }}
+                  {% endfor %}
 
   ##################################################
-  # ⚠️ WYCIEK WODY
+  # ⚠️ Podejrzenie wycieku / zmiękczacz
   ##################################################
   - choose:
       - conditions:
           - condition: template
             value_template: "{{ water_lph > avg_hourly + leak_threshold }}"
         sequence:
-
           - choose:
               - conditions:
                   - condition: template
@@ -161,34 +156,34 @@ action:
                             message: >
                               Pobór {{ water_lph | round(1) }} L/h
                               odpowiada regeneracji zmiękczacza.
-                      - default:
-                          - service: persistent_notification.create
-                            data:
-                              title: "⚠️ Regeneracja zmiękczacza"
-                              message: >
-                                Pobór {{ water_lph | round(1) }} L/h
-                                odpowiada regeneracji zmiękczacza.
-
-            default:
-              - choose:
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ notify_device_id != None }}"
-                    sequence:
-                      - device_id: !input notify_device
-                        domain: mobile_app
-                        type: notify
-                        title: "⚠️ PODEJRZENIE WYCIEKU WODY"
+                  default:
+                    - service: persistent_notification.create
+                      data:
+                        title: "⚠️ Regeneracja zmiękczacza"
                         message: >
                           Pobór {{ water_lph | round(1) }} L/h
-                          przekracza średnią {{ avg_hourly | round(1) }} L/h
-                  - default:
-                      - service: persistent_notification.create
-                        data:
-                          title: "⚠️ PODEJRZENIE WYCIEKU WODY"
-                          message: >
-                            Pobór {{ water_lph | round(1) }} L/h
-                            przekracza średnią {{ avg_hourly | round(1) }} L/h
+                          odpowiada regeneracji zmiękczacza.
+
+          default:
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ notify_device_id != None }}"
+                  sequence:
+                    - device_id: !input notify_device
+                      domain: mobile_app
+                      type: notify
+                      title: "⚠️ PODEJRZENIE WYCIEKU WODY"
+                      message: >
+                        Pobór {{ water_lph | round(1) }} L/h
+                        przekracza średnią {{ avg_hourly | round(1) }} L/h
+            default:
+              - service: persistent_notification.create
+                data:
+                  title: "⚠️ PODEJRZENIE WYCIEKU WODY"
+                  message: >
+                    Pobór {{ water_lph | round(1) }} L/h
+                    przekracza średnią {{ avg_hourly | round(1) }} L/h
 
   ##################################################
   # 🧠 UCZENIE ŚREDNIEJ GODZINOWEJ (14 dni)
