@@ -14,17 +14,6 @@ blueprint:
         entity:
           domain: sensor
 
-    water_unit:
-      name: Jednostka sensora
-      default: L
-      selector:
-        select:
-          options:
-            - label: "litry"
-              value: l
-            - label: "m³"
-              value: m3
-
     leak_threshold_lph:
       name: Próg wycieku (L/h)
       default: 25
@@ -50,6 +39,7 @@ blueprint:
       selector:
         device:
           integration: mobile_app
+          multiple: false
 
     soften_enabled:
       name: Zmiękczacz wody
@@ -93,13 +83,11 @@ trigger:
 
 variables:
   current_hour: "{{ now().hour }}"
-  water_sensor_entity: !input water_sensor
-  water_l_min_mean: "{{ state_attr(water_sensor_entity, 'mean') | float(0) }}"
+  water_l_min_mean: "{{ state_attr(!input water_sensor, 'mean') | float(0) }}"
   water_lph: "{{ water_l_min_mean * 60 }}"
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
   threshold_l: !input leak_threshold_lph
   flood_sensors_list: !input flood_sensors
-  notify_device_id: !input notify_device
   now_time: "{{ now().strftime('%H:%M') }}"
   soften_enabled: !input soften_enabled
   soften_start: !input soften_start
@@ -118,7 +106,7 @@ action:
           - condition: template
             value_template: "{{ flood_sensors_list | length > 0 and trigger.entity_id in flood_sensors_list }}"
         sequence:
-          - device_id: "{{ notify_device_id }}"
+          - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "💧 ZALANIE!"
@@ -136,7 +124,7 @@ action:
                   - condition: template
                     value_template: "{{ in_soften_window and soften_min <= water_lph <= soften_max }}"
                 sequence:
-                  - device_id: "{{ notify_device_id }}"
+                  - device_id: !input notify_device
                     domain: mobile_app
                     type: notify
                     title: "🚿 Pobór wody – możliwa regeneracja"
@@ -144,7 +132,7 @@ action:
                       Wykryto pobór {{ water_lph | round(1) }} L/h.
                       Zakres odpowiada regeneracji zmiękczacza.
             default:
-              - device_id: "{{ notify_device_id }}"
+              - device_id: !input notify_device
                 domain: mobile_app
                 type: notify
                 title: "🚨 PODEJRZENIE WYCIEKU WODY"
