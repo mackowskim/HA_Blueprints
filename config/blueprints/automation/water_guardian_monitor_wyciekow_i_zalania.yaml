@@ -24,9 +24,7 @@ blueprint:
       description: Lista urządzeń mobilnych do powiadomień (opcjonalne)
       default: []
       selector:
-        target:
-          entity:
-            domain: device_tracker
+        target: {}
     soften_enabled:
       name: Uwzględnij zmiękczacz
       description: Czy uwzględniać regenerację złoża zmiękczacza
