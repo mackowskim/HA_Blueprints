@@ -1,140 +1,158 @@
 blueprint:
-  name: Water Guardian – monitor wycieków i zalania (device_tracker)
+  name: Water Guardian – monitor wycieków i zalania (stabilny)
   description: >
-    Monitoruje zużycie wody, wykrywa podejrzenie wycieku i zalania.
-    Uwzględnia regenerację zmiękczacza z tolerancją ±25 L/h.
-    Powiadomienia wysyłane są do urządzeń wybranych z device_tracker.
+    Monitoruje zużycie wody, wykrywa wycieki oraz reaguje na czujniki zalania.
+    Obsługuje opcjonalny zmiękczacz wody z regeneracją.
+    Blueprint zgodny z najlepszymi praktykami Home Assistant.
   domain: automation
+
   input:
     water_sensor:
-      name: Sensor wody
-      description: Wskaźnik zużycia wody
+      name: Sensor zużycia wody
       selector:
         entity:
           domain: sensor
+
     water_unit:
       name: Jednostka sensora
-      description: Litry czy m³
+      description: Wybierz jednostkę, w której raportuje sensor
       selector:
         select:
           options:
             - L
             - m3
-    notify_devices:
-      name: Urządzenia do powiadomień
-      description: Wybierz urządzenia (device_tracker)
-      default: []
+
+    notify_device:
+      name: Urządzenie do powiadomień
+      description: Wybierz urządzenie mobilne (aplikacja HA)
       selector:
-        entity:
-          domain: device_tracker
-          multiple: true
+        device:
+          integration: mobile_app
+
     flood_sensors:
       name: Czujniki zalania
-      description: Wybierz czujniki zalania do monitorowania
+      description: Opcjonalne czujniki zalania
       default: []
       selector:
         entity:
           domain: binary_sensor
           multiple: true
+
     soften_enabled:
-      name: Uwzględnij zmiękczacz
-      description: Czy uwzględniać regenerację złoża zmiękczacza
+      name: Zmiękczacz wody
+      description: Czy używasz zmiękczacza z regeneracją
       default: false
       selector:
         boolean: {}
+
     soften_start:
-      name: Początek regeneracji zmiękczacza
-      description: Godzina początkowa
+      name: Początek regeneracji
       default: "02:00"
       selector:
         time: {}
+
     soften_end:
-      name: Koniec regeneracji zmiękczacza
-      description: Godzina końcowa
+      name: Koniec regeneracji
       default: "05:00"
       selector:
         time: {}
-    soften_avg_flow:
-      name: Średni pobór wody dla regeneracji zmiękczacza
-      description: Średni pobór w litrach podczas regeneracji złoża zmiękczacza
+
+    soften_avg_liters:
+      name: Średnie zużycie regeneracji (L/h)
       default: 50
       selector:
         number:
-          min: 0
+          min: 10
           max: 200
           step: 1
-          unit_of_measurement: "L"
+          unit_of_measurement: L
+
+    leak_threshold_lph:
+      name: Próg wycieku (L/h)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          unit_of_measurement: L
 
 trigger:
   - platform: time_pattern
     minutes: "/5"
 
+  - platform: state
+    entity_id: !input flood_sensors
+    to: "on"
+
+variables:
+  water_raw: "{{ states(!input water_sensor) | float(0) }}"
+  water_lph: >
+    {% if is_state('!input water_unit', 'm3') %}
+      {{ water_raw * 1000 }}
+    {% else %}
+      {{ water_raw }}
+    {% endif %}
+
+  soften_active: !input soften_enabled
+  soften_min: "{{ ( !input soften_avg_liters ) - 25 }}"
+  soften_max: "{{ ( !input soften_avg_liters ) + 25 }}"
+  now_time: "{{ now().strftime('%H:%M') }}"
+
+condition: []
+
 action:
-  - variables:
-      water: "{{ states(input.water_sensor) | float }}"
-      unit: "{{ input.water_unit }}"
-      soften: "{{ input.soften_enabled }}"
-      start: "{{ input.soften_start }}"
-      end: "{{ input.soften_end }}"
-      avg_flow: "{{ input.soften_avg_flow }}"
-      trackers: "{{ input.notify_devices }}"
-      floods: "{{ input.flood_sensors }}"
-
-  # Regeneracja zmiękczacza
   - choose:
+
+      # 💧 Czujnik zalania
       - conditions:
-          - "{{ soften and (now().strftime('%H:%M') >= start) and (now().strftime('%H:%M') <= end) }}"
+          - condition: template
+            value_template: >
+              {{ trigger.platform == 'state' }}
         sequence:
-          - variables:
-              soften_lower: "{{ avg_flow - 25 }}"
-              soften_upper: "{{ avg_flow + 25 }}"
-          - service: input_boolean.turn_on
-            target:
-              entity_id: input_boolean.nocny_wyciek_podejrzenie
-          - repeat:
-              count: "{{ trackers | length }}"
-              sequence:
-                - service: "notify.mobile_app_{{ trackers[repeat.index0].split('.')[1] }}"
-                  data:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            title: "🚨 ZALANIE"
+            message: >
+              Wykryto zalanie przez czujnik {{ trigger.entity_id }}
+
+      # 🚿 Wysokie zużycie wody
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ water_lph > ( !input leak_threshold_lph ) }}
+        sequence:
+          - choose:
+
+              # 🧂 Prawdopodobna regeneracja zmiękczacza
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {{ soften_active
+                         and now_time >= !input soften_start
+                         and now_time <= !input soften_end
+                         and water_lph >= soften_min
+                         and water_lph <= soften_max }}
+                sequence:
+                  - device_id: !input notify_device
+                    domain: mobile_app
+                    type: notify
+                    title: "ℹ️ Zużycie wody"
                     message: >
-                      {% if water < soften_lower or water > soften_upper %}
-                        Nieoczekiwany pobór podczas regeneracji: {{ water }} {{ unit }} (norma {{ avg_flow }} ±25L)
-                      {% else %}
-                        Prawdopodobna regeneracja zmiękczacza: pobór w normie {{ water }} {{ unit }}
-                      {% endif %}
+                      Wykryto pobór {{ water_lph | round(1) }} L/h.
+                      Prawdopodobna regeneracja zmiękczacza.
 
-  # Standardowy wyciek
-  - choose:
-      - conditions: "{{ water > 10 }}"
-        sequence:
-          - service: input_boolean.turn_on
-            target:
-              entity_id:
-                - input_boolean.dzienny_wyciek_podejrzenie
-                - input_boolean.nocny_wyciek_podejrzenie
-          - repeat:
-              count: "{{ trackers | length }}"
-              sequence:
-                - service: "notify.mobile_app_{{ trackers[repeat.index0].split('.')[1] }}"
-                  data:
-                    message: "Podejrzenie wycieku: pobór wody {{ water }} {{ unit }}"
+              # 🚨 Podejrzenie wycieku
+              - conditions: []
+                sequence:
+                  - device_id: !input notify_device
+                    domain: mobile_app
+                    type: notify
+                    title: "🚨 Podejrzenie wycieku wody"
+                    message: >
+                      Stały pobór {{ water_lph | round(1) }} L/h
+                      przekracza próg {{ !input leak_threshold_lph }} L/h.
 
-  # Czujniki zalania
-  - repeat:
-      count: "{{ floods | length }}"
-      sequence:
-        - variables:
-            flood_sensor: "{{ floods[repeat.index0] }}"
-        - choose:
-            - conditions: "{{ is_state(flood_sensor, 'on') }}"
-              sequence:
-                - service: input_boolean.turn_on
-                  target:
-                    entity_id: input_boolean.nocny_wyciek_podejrzenie
-                - repeat:
-                    count: "{{ trackers | length }}"
-                    sequence:
-                      - service: "notify.mobile_app_{{ trackers[repeat.index0].split('.')[1] }}"
-                        data:
-                          message: "Czujnik zalania {{ flood_sensor }} wykrył wodę!"
+mode: single
 
