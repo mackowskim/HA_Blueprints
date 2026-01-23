@@ -49,7 +49,7 @@ trigger:
 
 action:
   - variables:
-      water: "{{ states(input.water_sensor) | float }}"
+      water: "{{ input.water_sensor }}"
       unit: "{{ input.water_unit }}"
       trackers: "{{ input.notify_devices }}"
       floods: "{{ input.flood_sensors }}"
