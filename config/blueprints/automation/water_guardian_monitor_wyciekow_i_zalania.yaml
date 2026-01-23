@@ -1,5 +1,5 @@
 blueprint:
-  name: Water Guardian – monitor wycieków i zalania (stabilna wersja)
+  name: Water Guardian – monitor wycieków i zalania
   description: >
     Monitoruje chwilowy pobór wody na podstawie 15-minutowej średniej (statistics),
     porównuje z 14-dniową średnią godzinową i wysyła powiadomienia.
