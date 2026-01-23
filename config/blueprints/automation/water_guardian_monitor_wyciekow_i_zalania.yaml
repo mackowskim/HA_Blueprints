@@ -24,17 +24,17 @@ blueprint:
       description: Wybierz urządzenia mobilne do powiadomień (opcjonalne)
       default: []
       selector:
-        entity:
-          domain: mobile_app
-          multiple: true
+        target:
+          entity:
+            domain: mobile_app
     flood_sensors:
       name: Czujniki zalania
       description: Wybierz czujniki zalania do monitorowania
       default: []
       selector:
-        entity:
-          domain: binary_sensor
-          multiple: true
+        target:
+          entity:
+            domain: binary_sensor
     soften_enabled:
       name: Uwzględnij zmiękczacz
       description: Czy uwzględniać regenerację złoża zmiękczacza
@@ -90,14 +90,9 @@ action:
           - service: input_boolean.turn_on
             target:
               entity_id: input_boolean.nocny_wyciek_podejrzenie
-          - service: notify.mobile_app
+          - service: notify
             data:
-              target: >
-                {% if devices | length > 0 %}
-                  {{ devices }}
-                {% else %}
-                  []
-                {% endif %}
+              target: "{{ devices }}"
               message: >
                 {% if water < soften_lower or water > soften_upper %}
                   Nieoczekiwany pobór podczas regeneracji: {{ water }} {{ unit }} (norma {{ avg_flow }} ±25L)
@@ -107,21 +102,16 @@ action:
 
   # Standardowy wyciek
   - choose:
-      - conditions: "{{ water > 10 }}" # próg wycieku w L/h
+      - conditions: "{{ water > 10 }}" # próg wycieku L/h
         sequence:
           - service: input_boolean.turn_on
             target:
               entity_id:
                 - input_boolean.dzienny_wyciek_podejrzenie
                 - input_boolean.nocny_wyciek_podejrzenie
-          - service: notify.mobile_app
+          - service: notify
             data:
-              target: >
-                {% if devices | length > 0 %}
-                  {{ devices }}
-                {% else %}
-                  []
-                {% endif %}
+              target: "{{ devices }}"
               message: "Podejrzenie wycieku: pobór wody {{ water }} {{ unit }}"
 
   # Czujniki zalania
@@ -136,13 +126,8 @@ action:
                 - service: input_boolean.turn_on
                   target:
                     entity_id: input_boolean.nocny_wyciek_podejrzenie
-                - service: notify.mobile_app
+                - service: notify
                   data:
-                    target: >
-                      {% if devices | length > 0 %}
-                        {{ devices }}
-                      {% else %}
-                        []
-                      {% endif %}
+                    target: "{{ devices }}"
                     message: "Czujnik zalania {{ flood_sensor }} wykrył wodę!"
 
