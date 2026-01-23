@@ -85,15 +85,6 @@ mode: single
 
 action:
 
-  - variables:
-      water_lph: "{{ states(!input water_flow_sensor) | float(0) * 60 }}"
-      avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ now().hour) | float(0) }}"
-      hour_now: "{{ now().hour }}"
-      soften_active: >
-        {{ !input soften_enabled and
-           hour_now >= !input soften_start_hour and
-           hour_now < !input soften_end_hour }}
-
   # 1️⃣ ZALANIE
   - choose:
       - conditions:
@@ -119,37 +110,42 @@ action:
       - conditions:
           - condition: template
             value_template: >
-              {{ soften_active
-                 and water_lph >= !input soften_min_lph
-                 and water_lph <= !input soften_max_lph }}
+              {{ !input soften_enabled and
+                 (now().hour >= !input soften_start_hour) and
+                 (now().hour < !input soften_end_hour) and
+                 (states(!input water_flow_sensor) | float(0) * 60 >= !input soften_min_lph) and
+                 (states(!input water_flow_sensor) | float(0) * 60 <= !input soften_max_lph) }}
         sequence:
           - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "ℹ️ Regeneracja zmiękczacza"
             message: >
-              Pobór {{ water_lph | round(1) }} L/h
-              odpowiada regeneracji zmiękczacza.
+              Pobór {{ (states(!input water_flow_sensor) | float(0) * 60) | round(1) }} L/h
+              odpowiada pracy zmiękczacza.
 
       # 🚨 Podejrzenie wycieku
       - conditions:
           - condition: template
             value_template: >
-              {{ water_lph > avg_hourly + !input leak_threshold_lph }}
+              {{ (states(!input water_flow_sensor) | float(0) * 60) >
+                 (states('input_number.zuzycie_wody_stat_' ~ now().hour) | float(0)) + !input leak_threshold_lph }}
         sequence:
           - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "⚠️ PODEJRZENIE WYCIEKU WODY"
             message: >
-              Pobór {{ water_lph | round(1) }} L/h
-              przekracza średnią {{ avg_hourly | round(1) }} L/h
+              Pobór {{ (states(!input water_flow_sensor) | float(0) * 60) | round(1) }} L/h
+              przekracza średnią {{ states('input_number.zuzycie_wody_stat_' ~ now().hour) | float(0) | round(1) }} L/h
   default: []
 
-  # 3️⃣ Aktualizacja średniej godzinowej (14 dni)
+  # 3️⃣ Aktualizacja średniej godzinowej (ostatnie 14 dni)
   - service: input_number.set_value
     target:
       entity_id: "input_number.zuzycie_wody_stat_{{ now().hour }}"
     data:
-      value: "{{ ((avg_hourly * 13) + water_lph) / 14 }}"
+      value: >
+        {{ ((states('input_number.zuzycie_wody_stat_' ~ now().hour) | float(0) * 13) +
+            (states(!input water_flow_sensor) | float(0) * 60)) / 14 }}
 
