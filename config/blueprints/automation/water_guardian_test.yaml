@@ -1,7 +1,8 @@
 blueprint:
   name: Water Guardian – Test Input
-  description: Testuje działanie zmiennych input w automatyzacji blueprint
+  description: Testuje działanie inputów w automatyzacji Water Guardian
   domain: automation
+
   input:
     water_sensor:
       name: Sensor wody
@@ -9,22 +10,38 @@ blueprint:
       selector:
         entity:
           domain: sensor
+
     water_unit:
       name: Jednostka sensora
-      description: Litry czy m³
+      description: Litry lub m³
       selector:
         select:
           options:
             - L
             - m3
+
     notify_devices:
-      name: Urządzenia do powiadomień
-      description: Wybierz urządzenia (device_tracker)
-      default: []
+      name: Urządzenia powiadomień
+      description: Wybierz urządzenia do powiadomień
       selector:
         entity:
           domain: device_tracker
           multiple: true
+
+    flood_sensors:
+      name: Czujniki zalania
+      description: Wybierz czujniki zalania
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+
+    soften_enabled:
+      name: Uwzględniaj zmiękczacz
+      description: Włącz, jeśli chcesz testować regenerację złoża
+      default: false
+      selector:
+        boolean: {}
 
 trigger:
   - platform: time_pattern
@@ -35,11 +52,28 @@ action:
       water: "{{ states(input.water_sensor) | float }}"
       unit: "{{ input.water_unit }}"
       trackers: "{{ input.notify_devices }}"
+      floods: "{{ input.flood_sensors }}"
+      soften: "{{ input.soften_enabled }}"
 
+  # Test powiadomień device_tracker
   - repeat:
       count: "{{ trackers | length }}"
       sequence:
-        - service: "notify.mobile_app_{{ trackers[repeat.index0].split('.')[1] }}"
+        - service: persistent_notification.create
           data:
-            message: "Test input: sensor {{ input.water_sensor }} = {{ water }} {{ unit }}"
+            title: "Test Water Guardian"
+            message: >
+              Tracker {{ trackers[repeat.index0] }}:
+              Sensor water = {{ water }} {{ unit }},
+              Softener enabled: {{ soften }}
+
+  # Test powiadomień czujników zalania
+  - repeat:
+      count: "{{ floods | length }}"
+      sequence:
+        - service: persistent_notification.create
+          data:
+            title: "Test Water Guardian"
+            message: >
+              Flood sensor {{ floods[repeat.index0] }} status: {{ states(floods[repeat.index0]) }}
 
