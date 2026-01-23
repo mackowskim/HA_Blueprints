@@ -1,7 +1,7 @@
 blueprint:
   name: water_guardian_monitor_wyciekow_i_zalania
   description: >
-    Monitor wycieków i zalania.
+    Monitor wycieków i zalania z obsługą zmiękczacza.
     - Stały pobór wody i prognozowanie wycieków
     - Wykrywanie zalania (opcjonalne czujniki)
     - Obsługa zmiękczacza wody
@@ -40,14 +40,35 @@ blueprint:
           integration: mobile_app
           multiple: false
 
-    input_boolean_history:
-      name: Input boolean do historii alertów
+    soften_enabled:
+      name: Zmiękczacz wody
+      default: false
       selector:
-        entity:
-          domain: input_boolean
-          multiple: false
+        boolean: {}
 
-mode: restart
+    soften_start:
+      name: Start regeneracji
+      default: "02:00"
+      selector:
+        time: {}
+
+    soften_end:
+      name: Koniec regeneracji
+      default: "04:00"
+      selector:
+        time: {}
+
+    soften_avg_liters:
+      name: Pobór regeneracji (L/h)
+      default: 50
+      selector:
+        number:
+          min: 10
+          max: 300
+          step: 1
+          unit_of_measurement: "L/h"
+
+mode: single
 
 trigger:
   - platform: time_pattern
@@ -61,15 +82,28 @@ variables:
   notify_device_id: !input notify_device
   leak_threshold: !input leak_threshold_lph
   flood_sensors_list: !input flood_sensors
-  input_boolean_history: !input input_boolean_history
-  current_hour: "{{ now().hour }}"
 
-  water_l_min_mean: "{{ state_attr(water_sensor_entity,'mean') | float(0) }}"
+  soften_enabled: !input soften_enabled
+  soften_start: !input soften_start
+  soften_end: !input soften_end
+  soften_avg_liters: !input soften_avg_liters
+
+  current_hour: "{{ now().hour }}"
+  now_time: "{{ now().strftime('%H:%M') }}"
+
+  water_l_min_mean: "{{ state_attr(water_sensor_entity, 'mean') | float(0) }}"
   water_lph: "{{ water_l_min_mean * 60 }}"
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
 
+  soften_min: "{{ soften_avg_liters - 20 }}"
+  soften_max: "{{ soften_avg_liters + 20 }}"
+  in_soften_window: "{{ soften_enabled and soften_start <= now_time <= soften_end }}"
+
 action:
-  # 🚨 ZALANIE – natychmiast
+
+  ##################################################
+  # 🚨 ZALANIE – NATYCHMIAST
+  ##################################################
   - choose:
       - conditions:
           - condition: template
@@ -101,33 +135,64 @@ action:
                         • {{ state_attr(s,'friendly_name') or s }}
                         {% endfor %}
 
-  # ⚠️ Podejrzenie wycieku
+  ##################################################
+  # ⚠️ WYCIEK WODY
+  ##################################################
   - choose:
       - conditions:
           - condition: template
             value_template: "{{ water_lph > avg_hourly + leak_threshold }}"
         sequence:
+
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ notify_device_id != None }}"
+                    value_template: "{{ in_soften_window and soften_min <= water_lph <= soften_max }}"
                 sequence:
-                  - device_id: !input notify_device
-                    domain: mobile_app
-                    type: notify
-                    title: "⚠️ PODEJRZENIE WYCIEKU WODY"
-                    message: >
-                      Pobór {{ water_lph | round(1) }} L/h
-                      przekracza średnią {{ avg_hourly | round(1) }} L/h
-              - default:
-                  - service: persistent_notification.create
-                    data:
-                      title: "⚠️ PODEJRZENIE WYCIEKU WODY"
-                      message: >
-                        Pobór {{ water_lph | round(1) }} L/h
-                        przekracza średnią {{ avg_hourly | round(1) }} L/h
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ notify_device_id != None }}"
+                        sequence:
+                          - device_id: !input notify_device
+                            domain: mobile_app
+                            type: notify
+                            title: "⚠️ Regeneracja zmiękczacza"
+                            message: >
+                              Pobór {{ water_lph | round(1) }} L/h
+                              odpowiada regeneracji zmiękczacza.
+                      - default:
+                          - service: persistent_notification.create
+                            data:
+                              title: "⚠️ Regeneracja zmiękczacza"
+                              message: >
+                                Pobór {{ water_lph | round(1) }} L/h
+                                odpowiada regeneracji zmiękczacza.
 
-  # 🧠 Aktualizacja średniej godzinowej (14 dni)
+            default:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ notify_device_id != None }}"
+                    sequence:
+                      - device_id: !input notify_device
+                        domain: mobile_app
+                        type: notify
+                        title: "⚠️ PODEJRZENIE WYCIEKU WODY"
+                        message: >
+                          Pobór {{ water_lph | round(1) }} L/h
+                          przekracza średnią {{ avg_hourly | round(1) }} L/h
+                  - default:
+                      - service: persistent_notification.create
+                        data:
+                          title: "⚠️ PODEJRZENIE WYCIEKU WODY"
+                          message: >
+                            Pobór {{ water_lph | round(1) }} L/h
+                            przekracza średnią {{ avg_hourly | round(1) }} L/h
+
+  ##################################################
+  # 🧠 UCZENIE ŚREDNIEJ GODZINOWEJ (14 dni)
+  ##################################################
   - service: input_number.set_value
     target:
       entity_id: "input_number.zuzycie_wody_stat_{{ current_hour }}"
