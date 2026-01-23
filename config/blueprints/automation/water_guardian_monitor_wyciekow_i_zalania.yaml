@@ -43,6 +43,16 @@ blueprint:
       default: "05:00"
       selector:
         time: {}
+    soften_avg_flow:
+      name: Średni pobór wody dla regeneracji zmiękczacza
+      description: Średni pobór w litrach podczas regeneracji złoża zmiękczacza
+      default: 50
+      selector:
+        number:
+          min: 0
+          max: 200
+          step: 1
+          unit_of_measurement: "L"
 
 trigger:
   - platform: time_pattern
@@ -55,19 +65,39 @@ action:
       soften: "{{ input.soften_enabled }}"
       start: "{{ input.soften_start }}"
       end: "{{ input.soften_end }}"
+      avg_flow: "{{ input.soften_avg_flow }}"
       devices: "{{ input.notify_devices }}"
   - choose:
+      # Blok dla regeneracji zmiękczacza
       - conditions:
           - "{{ soften and (now().strftime('%H:%M') >= start) and (now().strftime('%H:%M') <= end) }}"
         sequence:
+          - variables:
+              soften_lower: "{{ avg_flow - 25 }}"
+              soften_upper: "{{ avg_flow + 25 }}"
           - choose:
-              - conditions: "{{ devices | length > 0 }}"
+              - conditions: "{{ water < soften_lower or water > soften_upper }}"
                 sequence:
-                  - service: notify.mobile_app
-                    data:
-                      target: "{{ devices }}"
-                      message: "Prawdopodobna regeneracja złoża zmiękczacza: pobór wody {{ water }} {{ unit }}"
-              - default: []
+                  - service: input_boolean.turn_on
+                    target:
+                      entity_id: input_boolean.nocny_wyciek_podejrzenie
+                  - choose:
+                      - conditions: "{{ devices | length > 0 }}"
+                        sequence:
+                          - service: notify.mobile_app
+                            data:
+                              target: "{{ devices }}"
+                              message: "Nieoczekiwany pobór podczas regeneracji: {{ water }} {{ unit }} (normalnie {{ avg_flow }} ±25L)"
+              - default:
+                  - choose:
+                      - conditions: "{{ devices | length > 0 }}"
+                        sequence:
+                          - service: notify.mobile_app
+                            data:
+                              target: "{{ devices }}"
+                              message: "Prawdopodobna regeneracja zmiękczacza: pobór w normie {{ water }} {{ unit }}"
+
+      # Blok dla standardowego wycieku
       - default:
           - choose:
               - conditions: "{{ water > 10 }}" # próg wycieku w L/h
@@ -84,5 +114,4 @@ action:
                             data:
                               target: "{{ devices }}"
                               message: "Podejrzenie wycieku: pobór wody {{ water }} {{ unit }}"
-                      - default: []
 
