@@ -1,0 +1,23 @@
+blueprint:
+  name: Test Input – Water Sensor
+  description: Sprawdza działanie input.water_sensor
+  domain: automation
+  input:
+    water_sensor:
+      name: Sensor wody
+      selector:
+        entity:
+          domain: sensor
+
+trigger:
+  - platform: time_pattern
+    minutes: "/1"
+
+action:
+  - variables:
+      water: "{{ states(input.water_sensor) | float }}"
+  - service: persistent_notification.create
+    data:
+      title: "Test Input"
+      message: "Sensor water = {{ water }}"
+

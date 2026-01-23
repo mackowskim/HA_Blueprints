@@ -1,0 +1,24 @@
+blueprint:
+  name: Test Input – Notify Devices
+  description: Sprawdza działanie input.notify_devices
+  domain: automation
+  input:
+    notify_devices:
+      name: Urządzenia powiadomień
+      selector:
+        entity:
+          domain: device_tracker
+          multiple: true
+
+trigger:
+  - platform: time_pattern
+    minutes: "/1"
+
+action:
+  - variables:
+      trackers: "{{ input.notify_devices }}"
+  - service: persistent_notification.create
+    data:
+      title: "Test Input"
+      message: "Wybrane device_tracker = {{ trackers }}"
+
