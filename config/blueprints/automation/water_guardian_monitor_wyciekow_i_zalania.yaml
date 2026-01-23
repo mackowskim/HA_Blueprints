@@ -1,8 +1,9 @@
 blueprint:
-  name: Water Guardian – monitor wycieków i zalania
+  name: Water Guardian – monitor wycieków i zalania (stabilna wersja)
   description: >
     Monitoruje zużycie wody, wykrywa podejrzenie wycieku i zalania.
     Uwzględnia regenerację zmiękczacza z tolerancją ±25 L/h.
+    Powiadomienia wysyłane są do stałych urządzeń mobilnych.
   domain: automation
   input:
     water_sensor:
@@ -19,14 +20,6 @@ blueprint:
           options:
             - L
             - m3
-    notify_devices:
-      name: Urządzenia powiadomień
-      description: Wybierz urządzenia mobilne do powiadomień (opcjonalne)
-      default: []
-      selector:
-        entity:
-          domain: notify
-          multiple: true
     flood_sensors:
       name: Czujniki zalania
       description: Wybierz czujniki zalania do monitorowania
@@ -76,7 +69,6 @@ action:
       start: "{{ input.soften_start }}"
       end: "{{ input.soften_end }}"
       avg_flow: "{{ input.soften_avg_flow }}"
-      devices: "{{ input.notify_devices }}"
       floods: "{{ input.flood_sensors }}"
 
   # Regeneracja zmiękczacza
@@ -90,9 +82,16 @@ action:
           - service: input_boolean.turn_on
             target:
               entity_id: input_boolean.nocny_wyciek_podejrzenie
-          - service: notify
+          - service: notify.mobile_app_moj_telefon   # <-- stałe urządzenie mobilne 1
             data:
-              target: "{{ devices }}"
+              message: >
+                {% if water < soften_lower or water > soften_upper %}
+                  Nieoczekiwany pobór podczas regeneracji: {{ water }} {{ unit }} (norma {{ avg_flow }} ±25L)
+                {% else %}
+                  Prawdopodobna regeneracja zmiękczacza: pobór w normie {{ water }} {{ unit }}
+                {% endif %}
+          - service: notify.mobile_app_drugi_telefon   # <-- stałe urządzenie mobilne 2
+            data:
               message: >
                 {% if water < soften_lower or water > soften_upper %}
                   Nieoczekiwany pobór podczas regeneracji: {{ water }} {{ unit }} (norma {{ avg_flow }} ±25L)
@@ -109,9 +108,11 @@ action:
               entity_id:
                 - input_boolean.dzienny_wyciek_podejrzenie
                 - input_boolean.nocny_wyciek_podejrzenie
-          - service: notify
+          - service: notify.mobile_app_moj_telefon
             data:
-              target: "{{ devices }}"
+              message: "Podejrzenie wycieku: pobór wody {{ water }} {{ unit }}"
+          - service: notify.mobile_app_drugi_telefon
+            data:
               message: "Podejrzenie wycieku: pobór wody {{ water }} {{ unit }}"
 
   # Czujniki zalania
@@ -126,8 +127,10 @@ action:
                 - service: input_boolean.turn_on
                   target:
                     entity_id: input_boolean.nocny_wyciek_podejrzenie
-                - service: notify
+                - service: notify.mobile_app_moj_telefon
                   data:
-                    target: "{{ devices }}"
+                    message: "Czujnik zalania {{ flood_sensor }} wykrył wodę!"
+                - service: notify.mobile_app_drugi_telefon
+                  data:
                     message: "Czujnik zalania {{ flood_sensor }} wykrył wodę!"
 
