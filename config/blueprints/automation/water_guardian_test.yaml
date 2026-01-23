@@ -1,0 +1,45 @@
+blueprint:
+  name: Water Guardian – Test Input
+  description: Testuje działanie zmiennych input w automatyzacji blueprint
+  domain: automation
+  input:
+    water_sensor:
+      name: Sensor wody
+      description: Wskaźnik zużycia wody
+      selector:
+        entity:
+          domain: sensor
+    water_unit:
+      name: Jednostka sensora
+      description: Litry czy m³
+      selector:
+        select:
+          options:
+            - L
+            - m3
+    notify_devices:
+      name: Urządzenia do powiadomień
+      description: Wybierz urządzenia (device_tracker)
+      default: []
+      selector:
+        entity:
+          domain: device_tracker
+          multiple: true
+
+trigger:
+  - platform: time_pattern
+    minutes: "/1"
+
+action:
+  - variables:
+      water: "{{ states(input.water_sensor) | float }}"
+      unit: "{{ input.water_unit }}"
+      trackers: "{{ input.notify_devices }}"
+
+  - repeat:
+      count: "{{ trackers | length }}"
+      sequence:
+        - service: "notify.mobile_app_{{ trackers[repeat.index0].split('.')[1] }}"
+          data:
+            message: "Test input: sensor {{ input.water_sensor }} = {{ water }} {{ unit }}"
+
