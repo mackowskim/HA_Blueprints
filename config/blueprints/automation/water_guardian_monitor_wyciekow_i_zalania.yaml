@@ -1,9 +1,9 @@
 blueprint:
-  name: Water Guardian – monitor wycieków i zalania (GUI-friendly)
+  name: Water Guardian – monitor wycieków i zalania (device_tracker)
   description: >
     Monitoruje zużycie wody, wykrywa podejrzenie wycieku i zalania.
     Uwzględnia regenerację zmiękczacza z tolerancją ±25 L/h.
-    Powiadomienia wysyłane są do wybranych w GUI urządzeń notify.
+    Powiadomienia wysyłane są do urządzeń wybranych z device_tracker.
   domain: automation
   input:
     water_sensor:
@@ -21,12 +21,12 @@ blueprint:
             - L
             - m3
     notify_devices:
-      name: Urządzenia powiadomień
-      description: Wybierz encje notify do powiadomień
+      name: Urządzenia do powiadomień
+      description: Wybierz urządzenia (device_tracker)
       default: []
       selector:
         entity:
-          domain: notify
+          domain: device_tracker
           multiple: true
     flood_sensors:
       name: Czujniki zalania
@@ -77,7 +77,7 @@ action:
       start: "{{ input.soften_start }}"
       end: "{{ input.soften_end }}"
       avg_flow: "{{ input.soften_avg_flow }}"
-      devices: "{{ input.notify_devices }}"
+      trackers: "{{ input.notify_devices }}"
       floods: "{{ input.flood_sensors }}"
 
   # Regeneracja zmiękczacza
@@ -92,9 +92,9 @@ action:
             target:
               entity_id: input_boolean.nocny_wyciek_podejrzenie
           - repeat:
-              count: "{{ devices | length }}"
+              count: "{{ trackers | length }}"
               sequence:
-                - service: "{{ devices[repeat.index0] }}"
+                - service: "notify.mobile_app_{{ trackers[repeat.index0].split('.')[1] }}"
                   data:
                     message: >
                       {% if water < soften_lower or water > soften_upper %}
@@ -113,9 +113,9 @@ action:
                 - input_boolean.dzienny_wyciek_podejrzenie
                 - input_boolean.nocny_wyciek_podejrzenie
           - repeat:
-              count: "{{ devices | length }}"
+              count: "{{ trackers | length }}"
               sequence:
-                - service: "{{ devices[repeat.index0] }}"
+                - service: "notify.mobile_app_{{ trackers[repeat.index0].split('.')[1] }}"
                   data:
                     message: "Podejrzenie wycieku: pobór wody {{ water }} {{ unit }}"
 
@@ -132,9 +132,9 @@ action:
                   target:
                     entity_id: input_boolean.nocny_wyciek_podejrzenie
                 - repeat:
-                    count: "{{ devices | length }}"
+                    count: "{{ trackers | length }}"
                     sequence:
-                      - service: "{{ devices[repeat.index0] }}"
+                      - service: "notify.mobile_app_{{ trackers[repeat.index0].split('.')[1] }}"
                         data:
                           message: "Czujnik zalania {{ flood_sensor }} wykrył wodę!"
 
