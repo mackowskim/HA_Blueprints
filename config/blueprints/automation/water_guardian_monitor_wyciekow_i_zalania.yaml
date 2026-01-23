@@ -92,17 +92,16 @@ trigger:
     to: "on"
 
 variables:
-  # Przenieś wszystkie !input poza {{ }}
+  # Wszystkie !input przeniesione tutaj
   water_sensor_entity: !input water_sensor
   flood_sensors_list: !input flood_sensors
-  notify_device_id: !input notify_device
   leak_threshold: !input leak_threshold_lph
   soften_enabled: !input soften_enabled
   soften_start: !input soften_start
   soften_end: !input soften_end
   soften_avg_liters: !input soften_avg_liters
 
-  # Zmienne dynamiczne w szablonach
+  # Zmienne dynamiczne
   current_hour: "{{ now().hour }}"
   now_time: "{{ now().strftime('%H:%M') }}"
   water_l_min_mean: "{{ state_attr(water_sensor_entity, 'mean') | float(0) }}"
@@ -114,13 +113,13 @@ variables:
 
 action:
 
-  # Czujniki zalania – tylko jeśli lista nie jest pusta
+  # Czujniki zalania
   - choose:
       - conditions:
           - condition: template
             value_template: "{{ flood_sensors_list | length > 0 and trigger.entity_id in flood_sensors_list }}"
         sequence:
-          - device_id: "{{ notify_device_id }}"
+          - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "💧 ZALANIE!"
@@ -138,7 +137,7 @@ action:
                   - condition: template
                     value_template: "{{ in_soften_window and soften_min <= water_lph <= soften_max }}"
                 sequence:
-                  - device_id: "{{ notify_device_id }}"
+                  - device_id: !input notify_device
                     domain: mobile_app
                     type: notify
                     title: "🚿 Pobór wody – możliwa regeneracja"
@@ -146,7 +145,7 @@ action:
                       Wykryto pobór {{ water_lph | round(1) }} L/h.
                       Zakres odpowiada regeneracji zmiękczacza.
             default:
-              - device_id: "{{ notify_device_id }}"
+              - device_id: !input notify_device
                 domain: mobile_app
                 type: notify
                 title: "🚨 PODEJRZENIE WYCIEKU WODY"
