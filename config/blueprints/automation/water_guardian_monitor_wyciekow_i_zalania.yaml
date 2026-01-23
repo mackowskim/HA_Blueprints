@@ -24,17 +24,17 @@ blueprint:
       description: Wybierz urządzenia mobilne do powiadomień (opcjonalne)
       default: []
       selector:
-        target:
-          entity:
-            domain: mobile_app
+        entity:
+          domain: notify
+          multiple: true
     flood_sensors:
       name: Czujniki zalania
       description: Wybierz czujniki zalania do monitorowania
       default: []
       selector:
-        target:
-          entity:
-            domain: binary_sensor
+        entity:
+          domain: binary_sensor
+          multiple: true
     soften_enabled:
       name: Uwzględnij zmiękczacz
       description: Czy uwzględniać regenerację złoża zmiękczacza
