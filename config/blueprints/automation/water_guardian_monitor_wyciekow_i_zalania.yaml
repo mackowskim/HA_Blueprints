@@ -82,7 +82,6 @@ blueprint:
 mode: single
 
 trigger:
-  # Wyzwala co minutę
   - platform: time_pattern
     minutes: "/1"
 
@@ -97,7 +96,7 @@ variables:
   soften_avg_liters: !input soften_avg_liters
   flood_sensors_list: !input flood_sensors
 
-  # template dla dynamicznych obliczeń
+  # dynamiczne obliczenia w template
   current_hour: "{{ now().hour }}"
   water_l_min_mean: "{{ state_attr(water_sensor_entity, 'mean') | float(0) }}"
   water_lph: "{{ water_l_min_mean * 60 }}"
