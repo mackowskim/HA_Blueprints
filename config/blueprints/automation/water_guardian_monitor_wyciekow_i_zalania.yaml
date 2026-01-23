@@ -27,7 +27,6 @@ blueprint:
         target:
           entity:
             domain: device_tracker
-            multiple: true
     soften_enabled:
       name: Uwzględnij zmiękczacz
       description: Czy uwzględniać regenerację złoża zmiękczacza
