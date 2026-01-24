@@ -75,6 +75,7 @@ trigger:
 variables:
   current_hour: "{{ now().hour }}"
   water_sensor_var: !input water_sensor
+  leak_threshold_var: !input leak_threshold_lph
   water_l_min_mean: "{{ state_attr(water_sensor_var, 'mean') | float(0) }}"
   water_lph: "{{ water_l_min_mean * 60 }}"
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
@@ -106,7 +107,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ water_lph > avg_hourly + !input leak_threshold_lph }}"
+            value_template: "{{ water_lph > avg_hourly + leak_threshold_var }}"
         sequence:
           - choose:
               # Regeneracja zmiękczacza
