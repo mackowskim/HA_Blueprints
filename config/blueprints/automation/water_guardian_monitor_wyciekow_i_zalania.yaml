@@ -9,7 +9,6 @@ blueprint:
   input:
     water_sensor:
       name: Sensor przepływu (L/min, statistics 15-min)
-      description: Sensor, który mierzy średni pobór wody w L/min
       selector:
         entity:
           domain: sensor
@@ -26,7 +25,6 @@ blueprint:
 
     flood_sensors:
       name: Czujniki zalania (opcjonalne)
-      description: Lista czujników zalania
       default: []
       selector:
         entity:
@@ -35,7 +33,6 @@ blueprint:
 
     notify_device:
       name: Urządzenie mobilne do powiadomień
-      description: Wybierz urządzenie z integracji mobile_app
       selector:
         device:
           integration: mobile_app
@@ -92,7 +89,7 @@ variables:
     {{ soften_enabled_var and soften_start_var <= now_time <= soften_end_var }}
 
 action:
-  # Obsługa czujników zalania (opcjonalne)
+  # Czujniki zalania
   - choose:
       - conditions:
           - condition: template
@@ -104,7 +101,7 @@ action:
             title: "💧 ZALANIE!"
             message: "Wykryto zalanie przez czujnik {{ trigger.entity_id }}"
 
-  # Wykrycie wycieku wody
+  # Podejrzenie wycieku wody
   - choose:
       - conditions:
           - condition: template
