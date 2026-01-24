@@ -72,25 +72,27 @@ blueprint:
 mode: single
 
 trigger:
-  # Wywołanie automatyzacji co minutę, bez błędów w trace
   - platform: template
     value_template: "{{ now().second == 0 }}"
 
 variables:
+  water_sensor_entity: !input water_sensor
+  leak_threshold: !input leak_threshold_lph
+  flood_sensors_list: !input flood_sensors
+  notify_device_id: !input notify_device
+  soften_enabled_var: !input soften_enabled
+  soften_start_var: !input soften_start
+  soften_end_var: !input soften_end
+  soften_avg_liters_var: !input soften_avg_liters
   current_hour: "{{ now().hour }}"
-  water_l_min_mean: "{{ state_attr(!input water_sensor, 'mean') | float(0) }}"
+  water_l_min_mean: "{{ state_attr(water_sensor_entity, 'mean') | float(0) }}"
   water_lph: "{{ water_l_min_mean * 60 }}"
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
-  flood_sensors_list: !input flood_sensors
   now_time: "{{ now().strftime('%H:%M') }}"
-  soften_enabled: !input soften_enabled
-  soften_start: !input soften_start
-  soften_end: !input soften_end
-  soften_avg_liters: !input soften_avg_liters
-  soften_min: "{{ soften_avg_liters - 25 }}"
-  soften_max: "{{ soften_avg_liters + 25 }}"
+  soften_min: "{{ soften_avg_liters_var - 25 }}"
+  soften_max: "{{ soften_avg_liters_var + 25 }}"
   in_soften_window: >
-    {{ soften_enabled and soften_start <= now_time <= soften_end }}
+    {{ soften_enabled_var and soften_start_var <= now_time <= soften_end_var }}
 
 action:
   - choose:
@@ -98,7 +100,7 @@ action:
           - condition: template
             value_template: "{{ flood_sensors_list | length > 0 and trigger.entity_id in flood_sensors_list }}"
         sequence:
-          - device_id: !input notify_device
+          - device_id: "{{ notify_device_id }}"
             domain: mobile_app
             type: notify
             title: "💧 ZALANIE!"
@@ -107,14 +109,14 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ water_lph > avg_hourly + threshold_l }}"
+            value_template: "{{ water_lph > avg_hourly + leak_threshold }}"
         sequence:
           - choose:
               - conditions:
                   - condition: template
                     value_template: "{{ in_soften_window and soften_min <= water_lph <= soften_max }}"
                 sequence:
-                  - device_id: !input notify_device
+                  - device_id: "{{ notify_device_id }}"
                     domain: mobile_app
                     type: notify
                     title: "🚿 Pobór wody – możliwa regeneracja"
@@ -122,7 +124,7 @@ action:
                       Wykryto pobór {{ water_lph | round(1) }} L/h.
                       Zakres odpowiada regeneracji zmiękczacza.
             default:
-              - device_id: !input notify_device
+              - device_id: "{{ notify_device_id }}"
                 domain: mobile_app
                 type: notify
                 title: "🚨 PODEJRZENIE WYCIEKU WODY"
