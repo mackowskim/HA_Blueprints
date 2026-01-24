@@ -1,9 +1,10 @@
 blueprint:
-  name: Water Guardian – inteligentny monitoring wycieków (15-min średnia)
+  name: Water Guardian – inteligentny monitoring wycieków (15-min średnia, safe)
   description: >
     Monitoruje chwilowy pobór wody na podstawie 15-minutowej średniej (statistics),
     porównuje z 14-dniową średnią godzinową i wysyła powiadomienia.
-    Obsługuje opcjonalne czujniki zalania i zmiękczacz wody.
+    Obsługuje opcjonalne czujniki zalania i zmiękczacz wody.  
+    Wersja bezpieczna: brak akcji, jeśli lista flood_sensors jest pusta.
   domain: automation
 
   input:
@@ -89,7 +90,7 @@ variables:
     {{ soften_enabled_var and soften_start_var <= now_time <= soften_end_var }}
 
 action:
-  # Czujniki zalania
+  # Czujniki zalania - tylko jeśli lista nie jest pusta
   - choose:
       - conditions:
           - condition: template
