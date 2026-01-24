@@ -69,8 +69,14 @@ blueprint:
 mode: single
 
 trigger:
-  - platform: template
-    value_template: "{{ now().second == 0 }}"
+  # Co minutę
+  - platform: time_pattern
+    minutes: "/1"
+
+  # Każdy czujnik zalania z listy
+  - platform: state
+    entity_id: !input flood_sensors
+    to: "on"
 
 variables:
   current_hour: "{{ now().hour }}"
