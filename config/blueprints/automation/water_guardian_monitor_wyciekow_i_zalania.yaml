@@ -1,4 +1,3 @@
-```yaml
 blueprint:
   name: Water Guardian – inteligentny monitoring wycieków (15-min średnia)
   description: >
@@ -137,5 +136,4 @@ action:
     data:
       value: >
         {{ ((avg_hourly * 13) + water_lph) / 14 }}
-```
 
