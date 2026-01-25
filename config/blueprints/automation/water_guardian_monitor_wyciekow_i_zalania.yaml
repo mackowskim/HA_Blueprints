@@ -1,3 +1,7 @@
+
+# ==========================
+# 2️⃣ BLUEPRINT – Water Guardian
+# ==========================
 blueprint:
   name: Water Guardian – inteligentny monitoring wycieków (15-min mean)
   description: >
@@ -101,8 +105,9 @@ variables:
   # ====== BIEŻĄCY POBÓR ======
   water_l_min_mean: >
     {{ expand(water_sensors)
-       | map(attribute='attributes.mean')
-       | map('float')
+       | map(attribute='entity_id')
+       | map('state_attr', 'mean')
+       | map('float', 0)
        | sum }}
 
   water_lph: "{{ water_l_min_mean * 60 }}"
@@ -200,4 +205,3 @@ action:
               entity_id: input_number.water_hour_liters
             data:
               value: 0
-
