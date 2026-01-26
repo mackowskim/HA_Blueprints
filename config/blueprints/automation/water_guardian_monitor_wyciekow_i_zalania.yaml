@@ -3,11 +3,12 @@ blueprint:
   description: >
     Monitoring wycieków wody z wykorzystaniem średniej 15-minutowej.
     Oddzielona logika statystyk i detekcji. Obsługa zmiękczacza i czujników zalania.
+    Dwutorowa detekcja: minutowa dla normalnego poboru, godzinowa w trakcie zmiękczacza.
   domain: automation
 
   input:
     water_sensor:
-      name: Czujnik przepływu (L/min)
+      name: Sensor przepływu (L/min)
       selector:
         entity:
           domain: sensor
@@ -62,9 +63,11 @@ blueprint:
           domain: input_boolean
 
 trigger:
+  # minutowy trigger
   - platform: time_pattern
     minutes: "/1"
 
+  # trigger z czujników zalania
   - platform: state
     entity_id: !input flood_sensors
     to: "on"
@@ -78,15 +81,15 @@ variables:
   soften_max_lph: !input soften_max_lph
   leak_threshold_lph: !input leak_threshold_lph
 
+  # pobór w L/min i przeliczony na L/h
   water_l_min: "{{ states(water_sensor) | float(0) }}"
   water_lph: "{{ water_l_min * 60 }}"
 
-  water_lph_15min: >
-    {{ states('sensor.water_flow_l_min_15min') | float(0) * 60 }}
+  # średnia 15-minutowa w L/h
+  water_lph_15min: "{{ states('sensor.water_flow_l_min_15min') | float(0) * 60 }}"
 
+  # sprawdzenie czy trwa regeneracja
   in_soften_window: "{{ is_state(softener_active, 'on') }}"
-
-condition: []
 
 action:
   - choose:
@@ -104,13 +107,12 @@ action:
             title: "💧 ZALANIE!"
             message: >
               Wykryto zalanie: {{
-                state_attr(trigger.entity_id, 'friendly_name')
-                or trigger.entity_id
+                state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id
               }}
           - stop: "Zalanie – przerwanie dalszych akcji"
 
       # =========================
-      # DETEKCJA PODCZAS ZMIĘKCZACZA (GODZINOWA)
+      # DETEKCJA GODZINOWA – zmiękczacz
       # =========================
       - conditions:
           - condition: template
@@ -128,13 +130,12 @@ action:
               poza zakresem {{ soften_min_lph }}–{{ soften_max_lph }} L/h.
 
       # =========================
-      # DETEKCJA STANDARDOWA (BEZ ZMIĘKCZACZA)
+      # DETEKCJA MINUTOWA – normalny pobór
       # =========================
       - conditions:
           - condition: template
             value_template: >
-              {{ not in_soften_window
-                 and water_lph_15min > leak_threshold_lph }}
+              {{ not in_soften_window and water_lph_15min > leak_threshold_lph }}
         sequence:
           - device_id: !input notify_device
             domain: mobile_app
