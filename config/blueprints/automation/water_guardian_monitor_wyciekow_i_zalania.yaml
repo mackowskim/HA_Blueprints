@@ -1,9 +1,10 @@
 blueprint:
-  name: Water Guardian – monitoring wycieków zmiękczacz (godzinowa)
+  name: Water Guardian – detektor wycieków i zalania
   description: >
     Godzinowa detekcja pracy zmiękczacza i wycieków.
     Minutowa detekcja tylko poza regeneracją.
     EMA godzinowa 14-dniowa uwzględnia wszystkie wartości.
+    Obsługuje również powiadomienia z czujników zalania.
   domain: automation
 
   input:
@@ -162,7 +163,7 @@ action:
                     message: >
                       Suma poboru w ostatniej godzinie: {{ hourly_sum | round(1) }} L
                       – prawdopodobnie praca zmiękczacza.
-              # podejrzenie wycieku
+              # przekroczenie średniej + próg → podejrzenie wycieku
               - conditions:
                   - condition: template
                     value_template: "{{ hourly_sum > threshold }}"
@@ -212,7 +213,5 @@ action:
                 {% endif %}
           - service: input_number.set_value
             target:
-              entity_id: input_number.water_hour_liters
-            data:
-              value: 0
+              entity_id: input_number
 
