@@ -4,7 +4,8 @@ blueprint:
     Godzinowa detekcja pracy zmiękczacza i wycieków.
     Minutowa detekcja tylko poza regeneracją.
     EMA godzinowa 14-dniowa uwzględnia wszystkie wartości.
-    Obsługuje również powiadomienia z czujników zalania.
+    Obsługuje powiadomienia z czujników zalania i wycieku.
+    Możliwość wywołania osobnych automatyzacji dla zdarzeń zalania i wycieku.
   domain: automation
 
   input:
@@ -77,6 +78,18 @@ blueprint:
           step: 1
           unit_of_measurement: "L/h"
 
+    flood_action:
+      name: Automatyzacja przy zalaniu (opcjonalnie)
+      default: []
+      selector:
+        action: {}
+
+    leak_action:
+      name: Automatyzacja przy wycieku (opcjonalnie)
+      default: []
+      selector:
+        action: {}
+
 mode: single
 
 trigger:
@@ -101,6 +114,9 @@ variables:
   soften_min_lph: !input soften_min_lph
   soften_max_lph: !input soften_max_lph
 
+  flood_action: !input flood_action
+  leak_action: !input leak_action
+
   now_time: "{{ now().strftime('%H:%M') }}"
   current_hour: "{{ now().hour }}"
   in_soften_window: >
@@ -120,6 +136,16 @@ action:
           - condition: template
             value_template: "{{ trigger.entity_id in flood_sensors }}"
         sequence:
+          # Wywołanie automatyzacji przy zalaniu (opcjonalnie)
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ flood_action != None }}"
+                sequence:
+                  - service: automation.trigger
+                    target:
+                      entity_id: !input flood_action
+          # Powiadomienie mobilne
           - device_id: !input notify_device
             domain: mobile_app
             type: notify
@@ -134,6 +160,16 @@ action:
           - condition: template
             value_template: "{{ not in_soften_window and avg_hourly > 0 and water_lph > avg_hourly + leak_threshold_lph }}"
         sequence:
+          # Wywołanie automatyzacji przy wycieku (opcjonalnie)
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ leak_action != None }}"
+                sequence:
+                  - service: automation.trigger
+                    target:
+                      entity_id: !input leak_action
+          # Powiadomienie mobilne
           - device_id: !input notify_device
             domain: mobile_app
             type: notify
@@ -168,6 +204,16 @@ action:
                   - condition: template
                     value_template: "{{ hourly_sum > threshold }}"
                 sequence:
+                  # Wywołanie automatyzacji przy wycieku (opcjonalnie)
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ leak_action != None }}"
+                        sequence:
+                          - service: automation.trigger
+                            target:
+                              entity_id: !input leak_action
+                  # Powiadomienie mobilne
                   - device_id: !input notify_device
                     domain: mobile_app
                     type: notify
