@@ -36,6 +36,24 @@ blueprint:
           step: 10
           unit_of_measurement: L/h
 
+    soften_enabled:
+      name: Zmiękczacz aktywny
+      default: false
+      selector:
+        boolean: {}
+
+    soften_start:
+      name: Godzina startu regeneracji
+      default: "02:00"
+      selector:
+        time: {}
+
+    soften_end:
+      name: Godzina końca regeneracji
+      default: "04:00"
+      selector:
+        time: {}
+
     soften_min_lph:
       name: Zmiękczacz – MIN zużycie godzinowe
       default: 40
@@ -56,12 +74,6 @@ blueprint:
           step: 10
           unit_of_measurement: L/h
 
-    softener_active:
-      name: Regeneracja zmiękczacza (boolean)
-      selector:
-        entity:
-          domain: input_boolean
-
 trigger:
   # minutowy trigger
   - platform: time_pattern
@@ -75,11 +87,19 @@ trigger:
 variables:
   water_sensor: !input water_sensor
   flood_sensors: !input flood_sensors
-  softener_active: !input softener_active
 
+  soften_enabled: !input soften_enabled
+  soften_start: !input soften_start
+  soften_end: !input soften_end
   soften_min_lph: !input soften_min_lph
   soften_max_lph: !input soften_max_lph
   leak_threshold_lph: !input leak_threshold_lph
+
+  # czas aktualny w formacie HH:MM
+  now_time: "{{ now().strftime('%H:%M') }}"
+
+  # okno regeneracji zmiękczacza
+  in_soften_window: "{{ soften_enabled and soften_start <= now_time <= soften_end }}"
 
   # pobór w L/min i przeliczony na L/h
   water_l_min: "{{ states(water_sensor) | float(0) }}"
@@ -87,9 +107,6 @@ variables:
 
   # średnia 15-minutowa w L/h
   water_lph_15min: "{{ states('sensor.water_flow_l_min_15min') | float(0) * 60 }}"
-
-  # sprawdzenie czy trwa regeneracja
-  in_soften_window: "{{ is_state(softener_active, 'on') }}"
 
 action:
   - choose:
