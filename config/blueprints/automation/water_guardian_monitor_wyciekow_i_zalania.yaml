@@ -213,5 +213,7 @@ action:
                 {% endif %}
           - service: input_number.set_value
             target:
-              entity_id: input_number
+              entity_id: input_number.water_hour_liters
+            data:
+              value: 0
 
