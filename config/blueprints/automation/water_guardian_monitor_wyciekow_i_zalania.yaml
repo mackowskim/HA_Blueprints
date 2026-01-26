@@ -19,10 +19,10 @@ blueprint:
           domain: sensor
 
     # =============================
-    # Sensor chwilowego przepływu (L/min) – do minutowej detekcji wycieków
+    # Sensor przepływu do minutowej detekcji (L/min lub 15-min mean)
     # =============================
     water_flow_sensor:
-      name: Sensor chwilowego przepływu (L/min)
+      name: Sensor przepływu (L/min lub 15-min mean)
       selector:
         entity:
           domain: sensor
@@ -130,7 +130,7 @@ variables:
     {% endif %}
 
   # =============================
-  # Minutowy pobór chwilowy w L/h
+  # Minutowy pobór w L/h
   # =============================
   flow_lph: "{{ states(water_flow_sensor) | float(0) * 60 }}"
 
@@ -162,7 +162,7 @@ action:
                     value_template: "{{ flood_action != [] }}"
                 sequence:
                   - choose: flood_action
-          - stop  # przerwanie dalszych akcji – zalanie krytyczne
+          - stop: "Zalanie wykryte – przerwanie dalszych akcji"
 
   # =============================
   # Minutowa detekcja wycieku (poza zmiękczaczem)
@@ -195,7 +195,7 @@ action:
                     value_template: >
                       {{ soften_min_l <= water_hour_l <= soften_max_l }}
                 sequence:
-                  - choose: []  # tylko informacyjnie
+                  - stop: "Praca zmiękczacza w normie – brak alarmu"
 
               # wyciek w trakcie pracy zmiękczacza
               - conditions:
