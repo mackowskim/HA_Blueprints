@@ -3,7 +3,7 @@ blueprint:
   description: >
     Detekcja wycieków w czasie rzeczywistym + statystyki godzinowe z 15-min średnich.
     Obsługuje zmiękczacz wody i czujniki zalania.
-    Dodano limity max poboru i tryb detekcji wycieku: średnia lub zakres.
+    Zmiękczacz używa zakresu zamiast średniej, max 100 L/h.
   domain: automation
 
   input:
@@ -22,17 +22,6 @@ blueprint:
           max: 500
           step: 1
           unit_of_measurement: "L/h"
-
-    leak_detection_mode:
-      name: Tryb detekcji wycieku
-      default: "average"
-      selector:
-        select:
-          options:
-            - label: "Średnia godzinowa"
-              value: "average"
-            - label: "Zakres godzinowy (min-max)"
-              value: "range"
 
     flood_sensors:
       name: Czujniki zalania (opcjonalne)
@@ -80,9 +69,11 @@ blueprint:
 mode: single
 
 trigger:
+  # co minutę
   - platform: time_pattern
     minutes: "/1"
 
+  # czujniki zalania
   - platform: state
     entity_id: !input flood_sensors
     to: "on"
@@ -91,7 +82,6 @@ variables:
   # ===== INPUTY =====
   water_sensor: !input water_sensor
   leak_threshold_lph: !input leak_threshold_lph
-  leak_detection_mode: !input leak_detection_mode
   flood_sensors: !input flood_sensors
   notify_device: !input notify_device
 
@@ -133,26 +123,27 @@ action:
 
   # ===== ZMIĘKCZACZ =====
   - choose:
+      # w oknie regeneracji i w zakresie ±25% średniego poboru
       - conditions:
           - condition: template
             value_template: >
               {{ in_soften_window and soften_min <= water_lph <= soften_max }}
         sequence:
           - stop: "Regeneracja zmiękczacza – pomijam"
+      # ignorujemy chwilowy pobór >100 L/h
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ in_soften_window and water_lph > 100 }}
+        sequence:
+          - stop: "Chwilowy pobór >100 L/h – ignorujemy"
 
   # ===== DETEKCJA WYCIEKU =====
   - choose:
       - conditions:
           - condition: template
             value_template: >
-              {% if leak_detection_mode == 'average' %}
-                {{ avg_hourly > 0 and water_lph > avg_hourly + leak_threshold_lph }}
-              {% else %}
-                {# tryb zakres: min-max z EMA #}
-                {% set avg_min = states('input_number.zuzycie_wody_stat_' ~ current_hour ~ '_min') | float(0) %}
-                {% set avg_max = states('input_number.zuzycie_wody_stat_' ~ current_hour ~ '_max') | float(1000) %}
-                {{ water_lph < avg_min or water_lph > avg_max }}
-              {% endif %}
+              {{ avg_hourly > 0 and water_lph > avg_hourly + leak_threshold_lph }}
         sequence:
           - device_id: !input notify_device
             domain: mobile_app
