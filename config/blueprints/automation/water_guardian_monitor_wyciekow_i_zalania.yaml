@@ -3,6 +3,7 @@ blueprint:
   description: >
     Detekcja wycieków w czasie rzeczywistym + statystyki godzinowe z 15-min średnich.
     Obsługuje zmiękczacz wody i czujniki zalania.
+    Dodano limity max poboru i tryb detekcji wycieku: średnia lub zakres.
   domain: automation
 
   input:
@@ -21,6 +22,17 @@ blueprint:
           max: 500
           step: 1
           unit_of_measurement: "L/h"
+
+    leak_detection_mode:
+      name: Tryb detekcji wycieku
+      default: "average"
+      selector:
+        select:
+          options:
+            - label: "Średnia godzinowa"
+              value: "average"
+            - label: "Zakres godzinowy (min-max)"
+              value: "range"
 
     flood_sensors:
       name: Czujniki zalania (opcjonalne)
@@ -57,22 +69,20 @@ blueprint:
 
     soften_avg_lph:
       name: Typowy pobór regeneracji (L/h)
-      default: 200
+      default: 60
       selector:
         number:
-          min: 50
-          max: 800
-          step: 10
+          min: 40
+          max: 80
+          step: 1
           unit_of_measurement: "L/h"
 
 mode: single
 
 trigger:
-  # co minutę
   - platform: time_pattern
     minutes: "/1"
 
-  # czujniki zalania
   - platform: state
     entity_id: !input flood_sensors
     to: "on"
@@ -81,6 +91,7 @@ variables:
   # ===== INPUTY =====
   water_sensor: !input water_sensor
   leak_threshold_lph: !input leak_threshold_lph
+  leak_detection_mode: !input leak_detection_mode
   flood_sensors: !input flood_sensors
   notify_device: !input notify_device
 
@@ -99,9 +110,10 @@ variables:
 
   # ===== POBÓR WODY =====
   water_l_min_mean: "{{ states(water_sensor) | float(0) }}"
-  water_lph: "{{ water_l_min_mean * 60 }}"
+  water_lph: "{{ [water_l_min_mean * 60, 1000] | min }}"  # max 1000 L/h dla domu
 
-  # ===== ŚREDNIA GODZINOWA (EMA 14 dni) =====
+  # ===== BUFOR GODZINOWY =====
+  hourly_liters: "{{ states('input_number.water_hour_liters') | float(0) }}"
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
 
 action:
@@ -124,8 +136,7 @@ action:
       - conditions:
           - condition: template
             value_template: >
-              {{ in_soften_window and
-                 soften_min <= water_lph <= soften_max }}
+              {{ in_soften_window and soften_min <= water_lph <= soften_max }}
         sequence:
           - stop: "Regeneracja zmiękczacza – pomijam"
 
@@ -134,16 +145,21 @@ action:
       - conditions:
           - condition: template
             value_template: >
-              {{ avg_hourly > 0 and
-                 water_lph > avg_hourly + leak_threshold_lph }}
+              {% if leak_detection_mode == 'average' %}
+                {{ avg_hourly > 0 and water_lph > avg_hourly + leak_threshold_lph }}
+              {% else %}
+                {# tryb zakres: min-max z EMA #}
+                {% set avg_min = states('input_number.zuzycie_wody_stat_' ~ current_hour ~ '_min') | float(0) %}
+                {% set avg_max = states('input_number.zuzycie_wody_stat_' ~ current_hour ~ '_max') | float(1000) %}
+                {{ water_lph < avg_min or water_lph > avg_max }}
+              {% endif %}
         sequence:
           - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "🚨 PODEJRZENIE WYCIEKU"
             message: >
-              Pobór {{ water_lph | round(1) }} L/h
-              przekracza normę {{ avg_hourly | round(1) }} L/h.
+              Pobór {{ water_lph | round(1) }} L/h przekracza normę.
 
   # ===== AGREGACJA GODZINOWA co 15 min =====
   - choose:
@@ -155,9 +171,7 @@ action:
             target:
               entity_id: input_number.water_hour_liters
             data:
-              value: >
-                {{ states('input_number.water_hour_liters') | float(0)
-                   + water_lph / 4 }}
+              value: "{{ hourly_liters + water_lph / 4 }}"
 
   # ===== STATYSTYKA GODZINOWA (EMA 14 dni) co godzinę =====
   - choose:
@@ -166,7 +180,6 @@ action:
             value_template: "{{ now().minute == 0 }}"
         sequence:
           - variables:
-              hourly_liters: "{{ states('input_number.water_hour_liters') | float(0) }}"
               old_avg: "{{ avg_hourly }}"
           - service: input_number.set_value
             target:
