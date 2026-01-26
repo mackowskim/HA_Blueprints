@@ -3,7 +3,7 @@ blueprint:
   description: >
     Detekcja wycieków w czasie rzeczywistym + statystyki godzinowe z 15-min średnich.
     Obsługuje zmiękczacz wody i czujniki zalania.
-    Zmiękczacz używa zakresu zamiast średniej, max 100 L/h.
+    Zmiękczacz używa ustawionego zakresu L/h zamiast średniej.
   domain: automation
 
   input:
@@ -56,13 +56,23 @@ blueprint:
       selector:
         time: {}
 
-    soften_avg_lph:
-      name: Typowy pobór regeneracji (L/h)
-      default: 60
+    soften_min_lph:
+      name: Minimalny pobór zmiękczacza (L/h)
+      default: 40
       selector:
         number:
-          min: 40
-          max: 80
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "L/h"
+
+    soften_max_lph:
+      name: Maksymalny pobór zmiękczacza (L/h)
+      default: 80
+      selector:
+        number:
+          min: 0
+          max: 100
           step: 1
           unit_of_measurement: "L/h"
 
@@ -88,15 +98,14 @@ variables:
   soften_enabled: !input soften_enabled
   soften_start: !input soften_start
   soften_end: !input soften_end
-  soften_avg_lph: !input soften_avg_lph
+  soften_min_lph: !input soften_min_lph
+  soften_max_lph: !input soften_max_lph
 
   # ===== CZAS =====
   now_time: "{{ now().strftime('%H:%M') }}"
   current_hour: "{{ now().hour }}"
   in_soften_window: >
     {{ soften_enabled and soften_start <= now_time <= soften_end }}
-  soften_min: "{{ soften_avg_lph * 0.7 }}"
-  soften_max: "{{ soften_avg_lph * 1.3 }}"
 
   # ===== POBÓR WODY =====
   water_l_min_mean: "{{ states(water_sensor) | float(0) }}"
@@ -123,14 +132,14 @@ action:
 
   # ===== ZMIĘKCZACZ =====
   - choose:
-      # w oknie regeneracji i w zakresie ±25% średniego poboru
+      # w oknie regeneracji i w ustawionym zakresie
       - conditions:
           - condition: template
             value_template: >
-              {{ in_soften_window and soften_min <= water_lph <= soften_max }}
+              {{ in_soften_window and soften_min_lph <= water_lph <= soften_max_lph }}
         sequence:
           - stop: "Regeneracja zmiękczacza – pomijam"
-      # ignorujemy chwilowy pobór >100 L/h
+      # chwilowy pobór >100 L/h – ignorujemy
       - conditions:
           - condition: template
             value_template: >
