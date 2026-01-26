@@ -3,24 +3,18 @@ blueprint:
   description: >
     Godzinowa detekcja pracy zmiękczacza i wycieków.
     Minutowa detekcja tylko poza regeneracją.
-    EMA godzinowa 14-dniowa uwzględnia wszystkie wartości.
+    EMA godzinowa 14-dniowa liczona w 59. minucie godziny.
     Obsługuje powiadomienia z czujników zalania i wycieku.
     Możliwość wywołania osobnych automatyzacji dla zdarzeń zalania i wycieku.
   domain: automation
 
   input:
-    # =============================
-    # Godzinowy licznik zużycia wody (utility_meter)
-    # =============================
     water_hour_meter:
       name: Utility meter – zużycie godzinowe
       selector:
         entity:
           domain: sensor
 
-    # =============================
-    # Sensor przepływu do minutowej detekcji
-    # =============================
     water_flow_sensor:
       name: Sensor przepływu (15-min mean lub chwilowy L/min)
       selector:
@@ -129,7 +123,7 @@ variables:
   leak_action: !input leak_action
 
   # =============================
-  # Czas
+  # Czas i okno pracy zmiękczacza
   # =============================
   now_time: "{{ now().strftime('%H:%M') }}"
   current_hour: "{{ now().hour }}"
@@ -208,7 +202,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ in_soften_window and now().minute == 0 }}"
+            value_template: "{{ in_soften_window and now().minute == 59 }}"
         sequence:
           - variables:
               threshold: "{{ avg_hourly + leak_threshold_lph }}"
@@ -244,11 +238,11 @@ action:
                       Suma poboru w ostatniej godzinie: {{ water_hour_l | round(1) }} L
                       przekracza średnią {{ avg_hourly | round(1) }} L + próg {{ leak_threshold_lph }} L
 
-  # ===== EMA godzinowa 14 dni =====
+  # ===== EMA godzinowa 14 dni (liczona w 59. minucie) =====
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ now().minute == 0 }}"
+            value_template: "{{ now().minute == 59 }}"
         sequence:
           - variables:
               old_avg: "{{ avg_hourly }}"
