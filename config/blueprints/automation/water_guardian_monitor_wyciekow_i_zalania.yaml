@@ -1,37 +1,37 @@
 blueprint:
   name: Water Guardian – detektor wycieków i zalania
   description: >
-    Detekcja wycieków na podstawie utility_meter (godzinowego) w jednostce licznika.
-    Minutowa detekcja poza pracą zmiękczacza.
-    Godzinowa detekcja w trakcie pracy zmiękczacza.
+    Detekcja wycieków i zalania w oparciu o utility_meter godzinowy.
+    Minutowa detekcja działa poza pracą zmiękczacza.
+    Godzinowa detekcja działa w trakcie pracy zmiękczacza.
     EMA 14-dniowa liczona z przeliczonej wartości w litrach.
-    Obsługuje czujniki zalania i zewnętrzne automatyzacje.
+    Obsługuje zmiękczacz wody i czujniki zalania, opcjonalnie wywołuje automatyzacje.
   domain: automation
 
   input:
-    # -------------------------
-    # Sensor z utility_meter (godzinowy)
-    # -------------------------
+    # =============================
+    # Utility meter godzinowy
+    # =============================
     water_hour_meter:
-      name: Utility meter – zużycie godzinowe (jednostka licznika)
+      name: Utility meter – zużycie godzinowe
       selector:
         entity:
           domain: sensor
 
-    # -------------------------
-    # Sensor chwilowego przepływu w L/min (do minutowej detekcji)
-    # -------------------------
+    # =============================
+    # Sensor chwilowego przepływu (L/min) – do minutowej detekcji wycieków
+    # =============================
     water_flow_sensor:
       name: Sensor chwilowego przepływu (L/min)
       selector:
         entity:
           domain: sensor
 
-    # -------------------------
-    # Próg wycieku w L/h
-    # -------------------------
+    # =============================
+    # Próg wycieku w litrach na godzinę
+    # =============================
     leak_threshold_l:
-      name: Próg wycieku (L / godz.)
+      name: Próg wycieku (L/h)
       default: 25
       selector:
         number:
@@ -39,9 +39,9 @@ blueprint:
           max: 500
           unit_of_measurement: "L"
 
-    # -------------------------
+    # =============================
     # Czujniki zalania (opcjonalne)
-    # -------------------------
+    # =============================
     flood_sensors:
       name: Czujniki zalania
       default: []
@@ -50,9 +50,9 @@ blueprint:
           domain: binary_sensor
           multiple: true
 
-    # -------------------------
+    # =============================
     # Zmiękczacz wody (okno pracy)
-    # -------------------------
+    # =============================
     soften_enabled:
       name: Zmiękczacz wody
       default: false
@@ -72,7 +72,7 @@ blueprint:
         time: {}
 
     soften_min_l:
-      name: Min. zużycie zmiękczacza (L/h)
+      name: Minimalny pobór zmiękczacza (L/h)
       default: 40
       selector:
         number:
@@ -81,7 +81,7 @@ blueprint:
           unit_of_measurement: "L"
 
     soften_max_l:
-      name: Max. zużycie zmiękczacza (L/h)
+      name: Maksymalny pobór zmiękczacza (L/h)
       default: 120
       selector:
         number:
@@ -89,9 +89,9 @@ blueprint:
           max: 300
           unit_of_measurement: "L"
 
-    # -------------------------
-    # Automatyzacje wywoływane przy zalaniu i wycieku (opcjonalne)
-    # -------------------------
+    # =============================
+    # Opcjonalne akcje przy zalaniu i wycieku
+    # =============================
     flood_action:
       name: Akcja przy zalaniu
       default: []
@@ -107,23 +107,21 @@ blueprint:
 mode: single
 
 trigger:
-  # Trigger co minutę do detekcji minutowej i zliczania czasu zmiękczacza
+  # co minutę – do minutowej detekcji i sprawdzania zmiękczacza
   - platform: time_pattern
     minutes: "/1"
 
-  # Trigger na czujnikach zalania
+  # trigger dla czujników zalania
   - platform: state
-    entity_id: !input flood_sensors
+    entity_id: flood_sensors
     to: "on"
 
 variables:
   # =============================
   # Odczyt godzinowy z utility_meter
   # =============================
-  raw_hour_value: "{{ states(!input water_hour_meter) | float(0) }}"
-  unit: "{{ state_attr(!input water_hour_meter, 'unit_of_measurement') | lower }}"
-
-  # Przeliczenie na litry do logiki wewnętrznej
+  raw_hour_value: "{{ states(water_hour_meter) | float(0) }}"
+  unit: "{{ state_attr(water_hour_meter, 'unit_of_measurement') | lower }}"
   water_hour_l: >
     {% if unit in ['m³','m3','m^3'] %}
       {{ raw_hour_value * 1000 }}
@@ -132,9 +130,9 @@ variables:
     {% endif %}
 
   # =============================
-  # Minutowy pobór chwilowy (L/h)
+  # Minutowy pobór chwilowy w L/h
   # =============================
-  flow_lph: "{{ states(!input water_flow_sensor) | float(0) * 60 }}"
+  flow_lph: "{{ states(water_flow_sensor) | float(0) * 60 }}"
 
   # =============================
   # Czas i okno pracy zmiękczacza
@@ -142,50 +140,48 @@ variables:
   now_time: "{{ now().strftime('%H:%M') }}"
   hour: "{{ now().hour }}"
   in_soften: >
-    {{ !input soften_enabled and false or
-       (!input soften_start <= now_time <= !input soften_end) }}
+    {{ soften_enabled and (soften_start <= now_time <= soften_end) }}
 
+  # =============================
+  # Średnia godzinowa (EMA) dla aktualnej godziny
+  # =============================
   avg_hour: "{{ states('input_number.zuzycie_wody_stat_' ~ hour) | float(0) }}"
 
 action:
-
   # =============================
-  # CZUJNIKI ZALANIA
+  # Obsługa zalania
   # =============================
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ trigger.entity_id in !input flood_sensors }}"
+            value_template: "{{ trigger.entity_id in flood_sensors }}"
         sequence:
-          # Wywołanie opcjonalnej automatyzacji przy zalaniu
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ !input flood_action != [] }}"
+                    value_template: "{{ flood_action != [] }}"
                 sequence:
-                  - choose: !input flood_action
-          - stop  # przerwanie dalszych akcji, bo zalanie to krytyczne
+                  - choose: flood_action
+          - stop  # przerwanie dalszych akcji – zalanie krytyczne
 
   # =============================
-  # MINUTOWA DETEKCJA WYCIEKU (poza oknem zmiękczacza)
+  # Minutowa detekcja wycieku (poza zmiękczaczem)
   # =============================
   - choose:
       - conditions:
           - condition: template
             value_template: >
-              {{ not in_soften
-                 and avg_hour > 0
-                 and flow_lph > avg_hour + !input leak_threshold_l }}
+              {{ not in_soften and avg_hour > 0 and flow_lph > avg_hour + leak_threshold_l }}
         sequence:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ !input leak_action != [] }}"
+                    value_template: "{{ leak_action != [] }}"
                 sequence:
-                  - choose: !input leak_action
+                  - choose: leak_action
 
   # =============================
-  # GODZINOWA DETEKCJA ZMIĘKCZACZA
+  # Godzinowa detekcja pracy zmiękczacza i wycieku
   # =============================
   - choose:
       - conditions:
@@ -193,24 +189,24 @@ action:
             value_template: "{{ in_soften and now().minute == 0 }}"
         sequence:
           - choose:
-              # normalna praca zmiękczacza
+              # normalna praca zmiękczacza (bez alarmu)
               - conditions:
                   - condition: template
                     value_template: >
-                      {{ !input soften_min_l <= water_hour_l <= !input soften_max_l }}
+                      {{ soften_min_l <= water_hour_l <= soften_max_l }}
                 sequence:
-                  - choose: []  # tylko informacyjnie, brak alarmu
+                  - choose: []  # tylko informacyjnie
 
-              # wyciek powyżej średniej + próg
+              # wyciek w trakcie pracy zmiękczacza
               - conditions:
                   - condition: template
                     value_template: >
-                      {{ water_hour_l > avg_hour + !input leak_threshold_l }}
+                      {{ water_hour_l > avg_hour + leak_threshold_l }}
                 sequence:
-                  - choose: !input leak_action
+                  - choose: leak_action
 
   # =============================
-  # EMA GODZINOWA (14 dni)
+  # EMA godzinowa (14 dni)
   # =============================
   - choose:
       - conditions:
