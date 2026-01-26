@@ -127,7 +127,8 @@ action:
             domain: mobile_app
             type: notify
             title: "💧 ZALANIE!"
-            message: "Wykryto zalanie: {{ trigger.entity_id }}"
+            message: >
+              Wykryto zalanie: {{ state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}
           - stop: "Zalanie – przerwanie dalszych akcji"
 
   # ===== ZMIĘKCZACZ =====
