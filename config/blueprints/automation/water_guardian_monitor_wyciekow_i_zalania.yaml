@@ -3,7 +3,7 @@ blueprint:
   description: >
     Godzinowa detekcja pracy zmiękczacza i wycieków.
     Minutowa detekcja tylko poza regeneracją.
-    EMA godzinowa 14-dniowa liczona w 59. minucie godziny.
+    EMA godzinowa 14-dniowa liczona w 59. minucie z utility_meter.
     Obsługuje powiadomienia z czujników zalania i wycieku.
     Możliwość wywołania osobnych automatyzacji dla zdarzeń zalania i wycieku.
   domain: automation
@@ -137,7 +137,7 @@ variables:
   water_lph: "{{ [water_l_min_mean * 60, 1000] | min }}"
 
   # =============================
-  # Pobór godzinowy z utility_meter
+  # Pobór godzinowy z utility_meter (bez minutowego przeliczania)
   # =============================
   raw_hour_value: "{{ states(water_hour_meter) | float(0) }}"
   unit: "{{ state_attr(water_hour_meter, 'unit_of_measurement') | lower }}"
@@ -198,7 +198,7 @@ action:
             message: >
               Pobór {{ water_lph | round(1) }} L/h przekracza normę.
 
-  # ===== GODZINOWA DETEKCJA ZMIĘKCZACZA =====
+  # ===== GODZINOWA DETEKCJA ZMIĘKCZACZA (minuta 59) =====
   - choose:
       - conditions:
           - condition: template
