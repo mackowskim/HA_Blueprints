@@ -1,9 +1,9 @@
 blueprint:
-  name: Water Guardian – inteligentny monitoring wycieków (15-min mean)
+  name: Water Guardian – inteligentny monitoring wycieków (15-min mean, dwutorowa)
   description: >
     Detekcja wycieków w czasie rzeczywistym + statystyki godzinowe z 15-min średnich.
     Obsługuje zmiękczacz wody i czujniki zalania.
-    Zmiękczacz używa ustawionego zakresu L/h zamiast średniej.
+    Dwutorowa detekcja: minutowa dla normalnego poboru, godzinowa w trakcie zmiękczacza.
   domain: automation
 
   input:
@@ -139,7 +139,7 @@ action:
             value_template: >
               {{ in_soften_window and soften_min_lph <= water_lph <= soften_max_lph }}
         sequence:
-          - stop: "Regeneracja zmiękczacza – pomijam"
+          - stop: "Regeneracja zmiękczacza – pomijam minutowe powiadomienia"
       # chwilowy pobór >100 L/h – ignorujemy
       - conditions:
           - condition: template
@@ -148,12 +148,12 @@ action:
         sequence:
           - stop: "Chwilowy pobór >100 L/h – ignorujemy"
 
-  # ===== DETEKCJA WYCIEKU =====
+  # ===== DETEKCJA WYCIEKU – minutowa (tylko poza zmiękczaczem) =====
   - choose:
       - conditions:
           - condition: template
             value_template: >
-              {{ avg_hourly > 0 and water_lph > avg_hourly + leak_threshold_lph }}
+              {{ not in_soften_window and avg_hourly > 0 and water_lph > avg_hourly + leak_threshold_lph }}
         sequence:
           - device_id: !input notify_device
             domain: mobile_app
@@ -161,6 +161,33 @@ action:
             title: "🚨 PODEJRZENIE WYCIEKU"
             message: >
               Pobór {{ water_lph | round(1) }} L/h przekracza normę.
+
+  # ===== DETEKCJA WYCIEKU – godzinowa (tylko w trakcie zmiękczacza) =====
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ in_soften_window and now().minute == 0 }}"
+        sequence:
+          - variables:
+              hourly_sum: "{{ states('input_number.water_hour_liters') | float(0) }}"
+              threshold: "{{ avg_hourly + leak_threshold_lph }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ hourly_sum > threshold }}"
+                sequence:
+                  - device_id: !input notify_device
+                    domain: mobile_app
+                    type: notify
+                    title: "🚨 PODEJRZENIE WYCIEKU (godzinowe)"
+                    message: >
+                      Suma poboru w godzinie: {{ hourly_sum | round(1) }} L
+                      przekracza normę {{ threshold | round(1) }} L.
+          - service: input_number.set_value
+            target:
+              entity_id: input_number.water_hour_liters
+            data:
+              value: 0
 
   # ===== AGREGACJA GODZINOWA co 15 min =====
   - choose:
