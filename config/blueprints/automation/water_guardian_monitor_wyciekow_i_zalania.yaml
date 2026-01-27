@@ -107,9 +107,6 @@ trigger:
     to: "on"
 
 variables:
-  # =============================
-  # Inputy
-  # =============================
   water_flow_sensor: !input water_flow_sensor
   water_hour_meter: !input water_hour_meter
   leak_threshold_lph: !input leak_threshold_lph
@@ -123,41 +120,26 @@ variables:
   flood_action: !input flood_action
   leak_action: !input leak_action
 
-  # =============================
-  # Czas i okno pracy zmiękczacza
-  # =============================
   now_time: "{{ now().strftime('%H:%M') }}"
   current_hour: "{{ now().hour }}"
   minute: "{{ now().minute }}"
   in_soften_window: >
     {{ soften_enabled and soften_start <= now_time <= soften_end }}
 
-  # =============================
-  # Pobór minutowy (L/h)
-  # =============================
   water_l_min_mean: "{{ states(water_flow_sensor) | float(0) }}"
   water_lph: "{{ [water_l_min_mean * 60, 1000] | min }}"
 
-  # =============================
-  # Pobór godzinowy z utility_meter (bez minutowego przeliczania)
-  # =============================
   raw_hour_value: "{{ states(water_hour_meter) | float(0) }}"
   unit: "{{ state_attr(water_hour_meter, 'unit_of_measurement') | lower }}"
   water_hour_l: >
     {% if unit in ['m³','m3','m^3'] %}
-      {{ raw_hour_value * 1000 }}
+      {{ (raw_hour_value * 1000) | round(1) }}
     {% else %}
-      {{ raw_hour_value }}
+      {{ raw_hour_value | round(1) }}
     {% endif %}
 
-  # =============================
-  # Średnia godzinowa EMA
-  # =============================
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
 
-  # =============================
-  # Liczniki streak dla 3x z rzędu
-  # =============================
   leak_streak: "{{ states('input_number.water_leak_streak') | int(0) }}"
   zero_hour_streak: "{{ states('input_number.water_zero_hour_streak') | int(0) }}"
 
@@ -285,9 +267,9 @@ action:
             data:
               value: >
                 {% if old_avg == 0 %}
-                  {{ water_hour_l }}
+                  {{ water_hour_l | round(1) }}
                 {% else %}
-                  {{ ((old_avg * 13) + water_hour_l) / 14 }}
+                  {{ ((old_avg * 13) + water_hour_l) / 14 | round(1) }}
                 {% endif %}
 
   # ===== GODZINY HISTORYCZNIE ZEROWE – 3x z rzędu =====
