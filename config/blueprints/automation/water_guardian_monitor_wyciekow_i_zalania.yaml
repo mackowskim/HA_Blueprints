@@ -1,16 +1,17 @@
 blueprint:
-  name: Water Guardian – detektor wycieków i zalania (v2)
+  name: Water Guardian – detektor wycieków i zalania (v2+)
   description: >
     Detekcja wycieków oparta o:
     - chwilowy przepływ (15-min mean)
     - zużycie godzinowe z utility_meter
-    Alarmy tylko po 3 kolejnych naruszeniach.
+    - godzinowa detekcja pracy zmiękczacza
+    Alarmy dopiero po 3 kolejnych naruszeniach.
     EMA 14-dniowa liczona z realnych danych godzinowych.
   domain: automation
 
   input:
     flow_sensor:
-      name: Sensor przepływu (15-min mean, L/min)
+      name: Sensor przepływu (15-min mean)
       selector:
         entity:
           domain: sensor
@@ -43,6 +44,44 @@ blueprint:
       selector:
         action: {}
 
+    soften_enabled:
+      name: Zmiękczacz wody
+      default: false
+      selector:
+        boolean: {}
+
+    soften_start:
+      name: Godzina startu regeneracji
+      default: "02:00"
+      selector:
+        time: {}
+
+    soften_end:
+      name: Godzina końca regeneracji
+      default: "04:00"
+      selector:
+        time: {}
+
+    soften_min_lph:
+      name: Minimalny pobór zmiękczacza (L/h)
+      default: 40
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "L/h"
+
+    soften_max_lph:
+      name: Maksymalny pobór zmiękczacza (L/h)
+      default: 80
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "L/h"
+
 mode: single
 
 trigger:
@@ -56,14 +95,20 @@ variables:
   notify_device: !input notify_device
   leak_action: !input leak_action
 
+  soften_enabled: !input soften_enabled
+  soften_start: !input soften_start
+  soften_end: !input soften_end
+  soften_min_lph: !input soften_min_lph
+  soften_max_lph: !input soften_max_lph
+
+  now_time: "{{ now().strftime('%H:%M') }}"
   current_hour: "{{ now().hour }}"
   minute: "{{ now().minute }}"
+  in_soften_window: "{{ soften_enabled and soften_start <= now_time <= soften_end }}"
 
-  # ===== CHWILOWY PRZEPŁYW =====
   flow_l_min: "{{ states(flow_sensor) | float(0) }}"
   flow_lph: "{{ flow_l_min * 60 }}"
 
-  # ===== ZUŻYCIE GODZINOWE =====
   raw_hour_value: "{{ states(water_hour_meter) | float(0) }}"
   unit: "{{ state_attr(water_hour_meter, 'unit_of_measurement') }}"
   hour_liters: >
@@ -81,23 +126,19 @@ variables:
 action:
 
   # =========================================================
-  # 1️⃣ NORMALNA DETEKCJA WYCIEKU (MINUTOWA)
+  # 1️⃣ NORMALNA DETEKCJA WYCIEKU (MINUTOWA, poza zmiękczaczem)
   # =========================================================
   - choose:
       - conditions:
           - condition: template
-            value_template: >
-              {{ avg_hourly > 0 and flow_lph > avg_hourly + leak_threshold_lph }}
+            value_template: "{{ not in_soften_window and flow_lph > avg_hourly + leak_threshold_lph }}"
         sequence:
           - service: input_number.set_value
             target:
               entity_id: input_number.water_leak_streak
             data:
               value: "{{ leak_streak + 1 }}"
-      - conditions:
-          - condition: template
-            value_template: "{{ avg_hourly > 0 }}"
-        sequence:
+      - default:
           - service: input_number.set_value
             target:
               entity_id: input_number.water_leak_streak
@@ -130,7 +171,49 @@ action:
               value: 0
 
   # =========================================================
-  # 2️⃣ GODZINY HISTORYCZNIE ZEROWE (59. MINUTA)
+  # 2️⃣ GODZINOWA DETEKCJA ZMIĘKCZACZA (co pełną godzinę)
+  # =========================================================
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ in_soften_window and minute == 59 }}"
+        sequence:
+          - variables:
+              threshold: "{{ avg_hourly + leak_threshold_lph }}"
+          - choose:
+              # normalny zakres pracy zmiękczacza
+              - conditions:
+                  - condition: template
+                    value_template: "{{ soften_min_lph <= hour_liters <= soften_max_lph }}"
+                sequence:
+                  - device_id: !input notify_device
+                    domain: mobile_app
+                    type: notify
+                    title: "💧 Zmiękczacz w pracy"
+                    message: >
+                      Suma poboru w ostatniej godzinie: {{ hour_liters | round(1) }} L
+                      – prawdopodobnie praca zmiękczacza.
+              # przekroczenie średniej + próg → podejrzenie wycieku
+              - conditions:
+                  - condition: template
+                    value_template: "{{ hour_liters > threshold }}"
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ leak_action != [] }}"
+                        sequence:
+                          - sequence: !input leak_action
+                  - device_id: !input notify_device
+                    domain: mobile_app
+                    type: notify
+                    title: "🚨 PODEJRZENIE WYCIEKU (godzinowe)"
+                    message: >
+                      Suma poboru w ostatniej godzinie: {{ hour_liters | round(1) }} L
+                      przekracza średnią {{ avg_hourly | round(1) }} L + próg {{ leak_threshold_lph }} L
+
+  # =========================================================
+  # 3️⃣ GODZINY HISTORYCZNIE ZEROWE (59. MINUTA)
   # =========================================================
   - choose:
       - conditions:
@@ -153,7 +236,6 @@ action:
                       entity_id: input_number.water_zero_hour_streak
                     data:
                       value: 0
-
           - choose:
               - conditions:
                   - condition: template
