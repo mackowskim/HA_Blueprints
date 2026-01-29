@@ -1,12 +1,9 @@
 blueprint:
-  name: Water Guardian – detektor wycieków i zalania (v2+)
+  name: Water Guardian – detektor wycieków i zalania v2.1
   description: >
-    Godzinowa detekcja pracy zmiękczacza i wycieków.
-    Minutowa detekcja tylko poza regeneracją.
-    EMA godzinowa 14-dniowa liczona w 59. minucie z utility_meter.
-    Alarmy po 3 kolejnych naruszeniach.
-    Obsługuje powiadomienia z czujników zalania i wycieku.
-    Możliwość wywołania osobnych automatyzacji dla zdarzeń zalania i wycieku.
+    Detekcja wycieków oparta wyłącznie o utility_meter (bez meanów).
+    Wykrywa ciągły pobór wody, ignoruje krótkie użycia.
+    Obsługuje zmiękczacz, zalanie oraz EMA godzinową (14 dni).
   domain: automation
 
   input:
@@ -16,24 +13,28 @@ blueprint:
         entity:
           domain: sensor
 
-    water_flow_sensor:
-      name: Sensor przepływu (15-min mean lub chwilowy L/min)
-      selector:
-        entity:
-          domain: sensor
-
-    leak_threshold_lph:
-      name: Próg wycieku (L/h)
-      default: 25
+    leak_threshold_l:
+      name: Minimalna suma wycieku (L)
+      default: 30
       selector:
         number:
-          min: 1
+          min: 5
           max: 500
           step: 1
-          unit_of_measurement: "L/h"
+          unit_of_measurement: "L"
+
+    leak_minutes_required:
+      name: Minuty ciągłego poboru
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 120
+          step: 1
+          unit_of_measurement: "min"
 
     flood_sensors:
-      name: Czujniki zalania (opcjonalne)
+      name: Czujniki zalania
       default: []
       selector:
         entity:
@@ -45,7 +46,6 @@ blueprint:
       selector:
         device:
           integration: mobile_app
-          multiple: false
 
     soften_enabled:
       name: Zmiękczacz wody
@@ -54,45 +54,25 @@ blueprint:
         boolean: {}
 
     soften_start:
-      name: Godzina startu regeneracji
+      name: Start regeneracji
       default: "02:00"
       selector:
         time: {}
 
     soften_end:
-      name: Godzina końca regeneracji
+      name: Koniec regeneracji
       default: "04:00"
       selector:
         time: {}
 
-    soften_min_lph:
-      name: Minimalny pobór zmiękczacza (L/h)
-      default: 40
-      selector:
-        number:
-          min: 0
-          max: 100
-          step: 1
-          unit_of_measurement: "L/h"
-
-    soften_max_lph:
-      name: Maksymalny pobór zmiękczacza (L/h)
-      default: 80
-      selector:
-        number:
-          min: 0
-          max: 100
-          step: 1
-          unit_of_measurement: "L/h"
-
-    flood_action:
-      name: Automatyzacja przy zalaniu (opcjonalnie)
+    leak_action:
+      name: Automatyzacja przy wycieku
       default: []
       selector:
         action: {}
 
-    leak_action:
-      name: Automatyzacja przy wycieku (opcjonalnie)
+    flood_action:
+      name: Automatyzacja przy zalaniu
       default: []
       selector:
         action: {}
@@ -107,54 +87,43 @@ trigger:
     to: "on"
 
 variables:
-  water_flow_sensor: !input water_flow_sensor
   water_hour_meter: !input water_hour_meter
-  leak_threshold_lph: !input leak_threshold_lph
+  leak_threshold_l: !input leak_threshold_l
+  leak_minutes_required: !input leak_minutes_required
   flood_sensors: !input flood_sensors
   notify_device: !input notify_device
   soften_enabled: !input soften_enabled
   soften_start: !input soften_start
   soften_end: !input soften_end
-  soften_min_lph: !input soften_min_lph
-  soften_max_lph: !input soften_max_lph
-  flood_action: !input flood_action
   leak_action: !input leak_action
+  flood_action: !input flood_action
 
   now_time: "{{ now().strftime('%H:%M') }}"
-  current_hour: "{{ now().hour }}"
-  minute: "{{ now().minute }}"
   in_soften_window: >
     {{ soften_enabled and soften_start <= now_time <= soften_end }}
 
-  water_l_min_mean: "{{ states(water_flow_sensor) | float(0) }}"
-  water_lph: "{{ [water_l_min_mean * 60, 1000] | min }}"
-
-  raw_hour_value: "{{ states(water_hour_meter) | float(0) }}"
+  raw_hour: "{{ states(water_hour_meter) | float(0) }}"
   unit: "{{ state_attr(water_hour_meter, 'unit_of_measurement') | lower }}"
-  water_hour_l: >
+  hour_l: >
     {% if unit in ['m³','m3','m^3'] %}
-      {{ (raw_hour_value * 1000) | round(1) }}
+      {{ (raw_hour * 1000) | round(1) }}
     {% else %}
-      {{ raw_hour_value | round(1) }}
+      {{ raw_hour | round(1) }}
     {% endif %}
 
-  avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
-
-  leak_streak: "{{ states('input_number.water_leak_streak') | int(0) }}"
-  zero_hour_streak: "{{ states('input_number.water_zero_hour_streak') | int(0) }}"
+  last_hour_l: "{{ states('input_number.wg_last_hour') | float(0) }}"
+  delta_l: "{{ (hour_l - last_hour_l) | round(1) }}"
 
 action:
 
-  # ===== CZUJNIKI ZALANIA =====
+  # ===== ZALANIE =====
   - choose:
       - conditions:
           - condition: template
             value_template: "{{ trigger.entity_id in flood_sensors }}"
         sequence:
           - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ flood_action | length > 0 }}"
+              - conditions: "{{ flood_action | length > 0 }}"
                 sequence:
                   - service: automation.trigger
                     target:
@@ -164,39 +133,44 @@ action:
             type: notify
             title: "💧 ZALANIE!"
             message: >
-              Wykryto zalanie: {{ state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}
-          - stop: "Zalanie – przerwanie dalszych akcji"
+              Wykryto zalanie: {{ state_attr(trigger.entity_id,'friendly_name') }}
+          - stop
 
-  # ===== MINUTOWA DETEKCJA WYCIEKU (poza regeneracją, 3x z rzędu) =====
+  # ===== CIĄGŁOŚĆ POBORU =====
   - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ not in_soften_window and avg_hourly > 0 and water_lph > avg_hourly + leak_threshold_lph }}"
+      - conditions: "{{ delta_l > 0 and not in_soften_window }}"
         sequence:
+          - service: input_number.increment
+            target:
+              entity_id: input_number.wg_minute_streak
+      - default:
           - service: input_number.set_value
             target:
-              entity_id: input_number.water_leak_streak
+              entity_id: input_number.wg_minute_streak
             data:
-              value: "{{ leak_streak + 1 }}"
-      - conditions:
-          - condition: template
-            value_template: "{{ not (water_lph > avg_hourly + leak_threshold_lph) }}"
+              value: 0
+
+  # ===== ALARM WYCIEKU =====
+  - choose:
+      - conditions: >
+          {{ states('input_number.wg_minute_streak') | int >= leak_minutes_required
+             and hour_l >= leak_threshold_l }}
         sequence:
+          - service: input_number.increment
+            target:
+              entity_id: input_number.wg_leak_streak
+      - default:
           - service: input_number.set_value
             target:
-              entity_id: input_number.water_leak_streak
+              entity_id: input_number.wg_leak_streak
             data:
               value: 0
 
   - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ leak_streak >= 3 }}"
+      - conditions: "{{ states('input_number.wg_leak_streak') | int >= 3 }}"
         sequence:
           - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ leak_action | length > 0 }}"
+              - conditions: "{{ leak_action | length > 0 }}"
                 sequence:
                   - service: automation.trigger
                     target:
@@ -206,106 +180,18 @@ action:
             type: notify
             title: "🚨 WYCIEK WODY"
             message: >
-              Stały pobór {{ water_lph | round(1) }} L/h przekracza średnią {{ avg_hourly | round(1) }} L/h
+              Wykryto ciągły pobór {{ hour_l }} L przez
+              {{ states('input_number.wg_minute_streak') }} min.
           - service: input_number.set_value
             target:
-              entity_id: input_number.water_leak_streak
+              entity_id: input_number.wg_leak_streak
             data:
               value: 0
 
-  # ===== GODZINOWA DETEKCJA ZMIĘKCZACZA (minuta 59) =====
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ in_soften_window and minute == 59 }}"
-        sequence:
-          - variables:
-              threshold: "{{ avg_hourly + leak_threshold_lph }}"
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ soften_min_lph <= water_hour_l <= soften_max_lph }}"
-                sequence:
-                  - device_id: !input notify_device
-                    domain: mobile_app
-                    type: notify
-                    title: "💧 Zmiękczacz w pracy"
-                    message: >
-                      Suma poboru w ostatniej godzinie: {{ water_hour_l | round(1) }} L
-                      – prawdopodobnie praca zmiękczacza.
-              - conditions:
-                  - condition: template
-                    value_template: "{{ water_hour_l > threshold }}"
-                sequence:
-                  - choose:
-                      - conditions:
-                          - condition: template
-                            value_template: "{{ leak_action | length > 0 }}"
-                        sequence:
-                          - service: automation.trigger
-                            target:
-                              entity_id: !input leak_action
-                  - device_id: !input notify_device
-                    domain: mobile_app
-                    type: notify
-                    title: "🚨 PODEJRZENIE WYCIEKU (godzinowe)"
-                    message: >
-                      Suma poboru w ostatniej godzinie: {{ water_hour_l | round(1) }} L
-                      przekracza średnią {{ avg_hourly | round(1) }} L + próg {{ leak_threshold_lph }} L
-
-  # ===== EMA godzinowa 14 dni (liczona w 59. minucie) =====
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ minute == 59 }}"
-        sequence:
-          - variables:
-              old_avg: "{{ avg_hourly }}"
-          - service: input_number.set_value
-            target:
-              entity_id: "input_number.zuzycie_wody_stat_{{ current_hour }}"
-            data:
-              value: >
-                {% if old_avg == 0 %}
-                  {{ water_hour_l | round(1) }}
-                {% else %}
-                  {{ ((old_avg * 13) + water_hour_l) / 14 | round(1) }}
-                {% endif %}
-
-  # ===== GODZINY HISTORYCZNIE ZEROWE – 3x z rzędu =====
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ minute == 59 }}"
-        sequence:
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ avg_hourly == 0 and water_hour_l > 0 }}"
-                sequence:
-                  - service: input_number.set_value
-                    target:
-                      entity_id: input_number.water_zero_hour_streak
-                    data:
-                      value: "{{ zero_hour_streak + 1 }}"
-              - conditions:
-                  - condition: template
-                    value_template: "{{ not (avg_hourly == 0 and water_hour_l > 0) }}"
-                sequence:
-                  - service: input_number.set_value
-                    target:
-                      entity_id: input_number.water_zero_hour_streak
-                    data:
-                      value: 0
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ zero_hour_streak >= 3 }}"
-                sequence:
-                  - device_id: !input notify_device
-                    domain: mobile_app
-                    type: notify
-                    title: "🚨 WYCIEK – nietypowe godziny"
-                    message: >
-                      Pobór w godzinach historycznie zerowych przez 3 kolejne godziny.
+  # ===== ZAPAMIĘTAJ STAN =====
+  - service: input_number.set_value
+    target:
+      entity_id: input_number.wg_last_hour
+    data:
+      value: "{{ hour_l }}"
 
