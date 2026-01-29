@@ -1,5 +1,5 @@
 blueprint:
-  name: Water Guardian – detektor wycieków i zalania (v2+)
+  name: Water Guardian – detektor wycieków i zalania 
   description: >
     Godzinowa detekcja pracy zmiękczacza i wycieków.
     Minutowa detekcja tylko poza regeneracją.
