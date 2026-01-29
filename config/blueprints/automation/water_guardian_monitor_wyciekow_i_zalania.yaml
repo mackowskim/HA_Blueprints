@@ -1,8 +1,15 @@
 blueprint:
-  name: Water Guardian – detektor wycieków i zalania (v0.5)
+  name: Water Guardian – detektor wycieków i zalania (v0.7)
   description: >
-    Detekcja wycieków i zalania. Uwzględnia zmiękczacz, EMA godzinową 14-dniową,
+    Detekcja wycieków i zalania. Uwzględnia zmiękczacz, EMA 14-dniową,
     limit streak wycieku oraz powiadomienia mobilne i TTS na media_player.
+
+    **Zmiany od v0.6:**
+    - Dodany brakujący input `flood_action` (opcjonalna automatyzacja przy zalaniu)
+    - Poprawione warunki streak i limit powtórzeń
+    - Ujednolicone nazwy helperów Water Guardian
+    - Poprawione powiadomienia mobilne i TTS
+
   domain: automation
 
   input:
@@ -53,6 +60,12 @@ blueprint:
         entity:
           domain: binary_sensor
           multiple: true
+
+    flood_action:
+      name: Automatyzacja przy zalaniu (opcjonalnie)
+      default: []
+      selector:
+        action: {}
 
     notify_device_primary:
       name: Urządzenie mobilne główne
@@ -128,7 +141,7 @@ variables:
   now_time: "{{ now().strftime('%H:%M') }}"
   minute: "{{ now().minute }}"
   current_hour: "{{ now().hour }}"
-  in_soften_window: "{{ !input 'soften_enabled' or (now_time >= soften_start and now_time <= soften_end) }}"
+  in_soften_window: "{{ !input 'soften_enabled' and (now_time >= soften_start and now_time <= soften_end) }}"
 
   water_hour_l: >-
     {% set raw = states(!input 'water_hour_meter') | float(0) %}
@@ -155,12 +168,14 @@ action:
           - condition: template
             value_template: "{{ trigger.entity_id in !input 'flood_sensors' }}"
         sequence:
-          - service: device_tracker.see
-            data: {}  # placeholder
-          - service: automation.trigger
-            target:
-              entity_id: !input 'flood_action'
-            # opcjonalne
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ !input 'flood_action' | length > 0 }}"
+                sequence:
+                  - service: automation.trigger
+                    target:
+                      entity_id: !input 'flood_action'
           - device_id: !input 'notify_device_primary'
             domain: mobile_app
             type: notify
