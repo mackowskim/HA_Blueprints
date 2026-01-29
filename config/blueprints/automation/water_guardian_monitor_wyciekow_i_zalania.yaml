@@ -1,12 +1,13 @@
 blueprint:
-  name: Water Guardian – detektor wycieków i zalania (v5)
+  name: Water Guardian – detektor wycieków i zalania (v0.5)
   description: >
     Detekcja wycieków i zalania w oparciu o godzinowy pobór z utility_meter.
     EMA godzinowa 14-dniowa liczona w 59. minucie.
-    Alarmy po 3 kolejnych godzinach przekroczenia progu (opcjonalnie streak).
-    Obsługuje powiadomienia z czujników zalania i wycieku.
+    Alarmy po zadeklarowanej liczbie kolejnych godzin przekroczenia progu.
     Chroni przed alarmem podczas pracy zmiękczacza.
-    Wersja v5: opcjonalne powiadomienia TTS na media_player i drugie urządzenie mobilne.
+    Powiadomienia mobilne, TTS i persistent notifications w HA.
+    Wersja testowa v0.5.
+
   domain: automation
 
   input:
@@ -25,6 +26,23 @@ blueprint:
           max: 500
           step: 1
           unit_of_measurement: "L/h"
+
+    water_leak_streak_limit:
+      name: Water Guardian – próg alarmu wycieku (liczba powtórzeń)
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 1
+
+    use_hourly_streak:
+      name: Używać streak (3 godziny z rzędu)
+      default: true
+      description: >
+        Jeżeli włączone, alarm wycieku wysyłany jest dopiero po zadeklarowanej liczbie kolejnych godzin przekroczenia średniego poboru.
+      selector:
+        boolean: {}
 
     flood_sensors:
       name: Czujniki zalania (opcjonalne)
@@ -107,12 +125,6 @@ blueprint:
       selector:
         action: {}
 
-    use_hourly_streak:
-      name: Używać streak (3 godziny z rzędu)
-      default: true
-      selector:
-        boolean: {}
-
 mode: single
 
 trigger:
@@ -125,6 +137,8 @@ trigger:
 variables:
   water_hour_meter: !input water_hour_meter
   leak_threshold_lph: !input leak_threshold_lph
+  water_leak_streak_limit: !input water_leak_streak_limit
+  use_hourly_streak: !input use_hourly_streak
   flood_sensors: !input flood_sensors
   notify_device: !input notify_device
   notify_device_secondary: !input notify_device_secondary
@@ -136,7 +150,6 @@ variables:
   soften_max_lph: !input soften_max_lph
   flood_action: !input flood_action
   leak_action: !input leak_action
-  use_hourly_streak: !input use_hourly_streak
 
   now_time: "{{ now().strftime('%H:%M') }}"
   current_hour: "{{ now().hour }}"
@@ -156,9 +169,11 @@ variables:
   leak_streak: "{{ states('input_number.water_leak_streak') | int(0) }}"
   zero_hour_streak: "{{ states('input_number.water_zero_hour_streak') | int(0) }}"
 
+# ========================== AKCJE ==========================
+
 action:
 
-  # ===== CZUJNIKI ZALANIA =====
+  # ===== ZALANIE =====
   - choose:
       - conditions:
           - condition: template
@@ -189,9 +204,15 @@ action:
                     title: "💧 ZALANIE!"
                     message: >
                       Wykryto zalanie: {{ state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}
+          - service: persistent_notification.create
+            data:
+              title: "💧 Water Guardian – ZALANIE"
+              message: >
+                Wykryto zalanie: {{ state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}
+              notification_id: water_guardian_flood
           - stop: "Zalanie – przerwanie dalszych akcji"
 
-  # ===== GODZINOWA DETEKCJA WYCIEKU =====
+  # ===== WYCIEK =====
   - choose:
       - conditions:
           - condition: template
@@ -220,7 +241,9 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ (use_hourly_streak and leak_streak >= 3) or (not use_hourly_streak and water_hour_l > avg_hourly + leak_threshold_lph) }}"
+            value_template: >
+              {{ (use_hourly_streak and leak_streak >= water_leak_streak_limit)
+                 or (not use_hourly_streak and water_hour_l > avg_hourly + leak_threshold_lph) }}
         sequence:
           - choose:
               - conditions:
@@ -248,7 +271,14 @@ action:
                     title: "🚨 WYCIEK WODY"
                     message: >
                       Pobór {{ water_hour_l | round(1) }} L/h przekracza średnią {{ avg_hourly | round(1) }} L/h
-          # TTS na media_player – tylko jeśli wybrane
+          # Persistent notification
+          - service: persistent_notification.create
+            data:
+              title: "🚨 Water Guardian – WYCIEK"
+              message: >
+                Pobór {{ water_hour_l | round(1) }} L/h przekracza średnią {{ avg_hourly | round(1) }} L/h
+              notification_id: water_guardian_leak
+          # TTS na media_players
           - choose:
               - conditions:
                   - condition: template
@@ -269,14 +299,12 @@ action:
             data:
               value: 0
 
-  # ===== GODZINOWA DETEKCJA ZMIĘKCZACZA (minuta 59) =====
+  # ===== GODZINOWA DETEKCJA ZMIĘKCZACZA – minuta 59 =====
   - choose:
       - conditions:
           - condition: template
             value_template: "{{ in_soften_window and minute == 59 }}"
         sequence:
-          - variables:
-              threshold: "{{ avg_hourly + leak_threshold_lph }}"
           - choose:
               - conditions:
                   - condition: template
@@ -288,10 +316,10 @@ action:
                     title: "💧 Zmiękczacz w pracy"
                     message: >
                       Suma poboru w ostatniej godzinie: {{ water_hour_l | round(1) }} L
-                      – prawdopodobnie praca zmiękacza.
+          - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ water_hour_l > threshold }}"
+                    value_template: "{{ water_hour_l > avg_hourly + leak_threshold_lph }}"
                 sequence:
                   - choose:
                       - conditions:
@@ -309,19 +337,18 @@ action:
                       Suma poboru w ostatniej godzinie: {{ water_hour_l | round(1) }} L
                       przekracza średnią {{ avg_hourly | round(1) }} L + próg {{ leak_threshold_lph }} L
 
-  # ===== EMA godzinowa 14 dni =====
+  # ===== EMA godzinowa 14 dni (minuta 59) =====
   - choose:
       - conditions:
           - condition: template
             value_template: "{{ minute == 59 }}"
         sequence:
-          - variables:
-              old_avg: "{{ avg_hourly }}"
           - service: input_number.set_value
             target:
               entity_id: "input_number.zuzycie_wody_stat_{{ current_hour }}"
             data:
               value: >
+                {% set old_avg = states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) %}
                 {% if old_avg == 0 %}
                   {{ water_hour_l | round(1) }}
                 {% else %}
@@ -337,7 +364,7 @@ action:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ avg_hourly < 0.5 and water_hour_l > 0 }}"
+                    value_template: "{{ avg_hourly == 0 and water_hour_l > 0 }}"
                 sequence:
                   - service: input_number.set_value
                     target:
@@ -346,7 +373,7 @@ action:
                       value: "{{ zero_hour_streak + 1 }}"
               - conditions:
                   - condition: template
-                    value_template: "{{ not (avg_hourly < 0.5 and water_hour_l > 0) }}"
+                    value_template: "{{ not (avg_hourly == 0 and water_hour_l > 0) }}"
                 sequence:
                   - service: input_number.set_value
                     target:
@@ -363,5 +390,28 @@ action:
                     type: notify
                     title: "🚨 WYCIEK – nietypowe godziny"
                     message: >
-                      Pobór w godzinach historycznie zerowych przez 3 kolejne godziny.
+                      Pobór w godzinach historycznie zerowych przez 3 kolejne godziny
+                  - service: persistent_notification.create
+                    data:
+                      title: "🚨 Water Guardian – nietypowe godziny"
+                      message: >
+                        Pobór w godzinach historycznie zerowych przez 3 kolejne godziny
+                      notification_id: water_guardian_zero_hours
+
+  # ===== DEBUG SENSOR – status alarmu =====
+  - service: input_text.set_value
+    target:
+      entity_id: input_text.water_guardian_status
+    data:
+      value: >
+        {% if in_soften_window %}
+          W oknie pracy zmiękczacza – brak alarmu
+        {% elif water_hour_l > avg_hourly + leak_threshold_lph %}
+          Alarm wycieku – pobór {{ water_hour_l | round(1) }} L/h > średnia {{ avg_hourly | round(1) }} L/h
+          {% if use_hourly_streak %}, streak: {{ leak_streak + 1 }}/{{ water_leak_streak_limit }}{% endif %}
+        {% elif zero_hour_streak >= 3 %}
+          Alarm wycieku – godziny historycznie zerowe przez 3 godziny
+        {% else %}
+          Brak alarmu
+        {% endif %}
 
