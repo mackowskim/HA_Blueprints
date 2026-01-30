@@ -3,7 +3,7 @@ blueprint:
   description: >
     Detekcja wycieków i zalania z obsługą zmiękczacza, EMA 14-dniową,
     powiadomienia mobilne i TTS na media_player.  
-    Minutowa detekcja wycieku działa natychmiast na podstawie utility_meter,  
+    Minutowa detekcja wycieku działa natychmiast na podstawie utility_meter.  
     3x streak pozostaje tylko dla godzin historycznie zerowych.
 
   domain: automation
@@ -39,15 +39,15 @@ blueprint:
       selector:
         action: {}
 
-    notify_device_primary:
-      name: Urządzenie mobilne główne
+    notify_device:
+      name: Urządzenie do powiadomień (główne)
       selector:
         device:
           integration: mobile_app
           multiple: false
 
     notify_device_secondary:
-      name: Urządzenie mobilne drugie (opcjonalnie)
+      name: Urządzenie do powiadomień (opcjonalne)
       default: ""
       selector:
         device:
@@ -114,7 +114,7 @@ variables:
   leak_threshold_lph: !input leak_threshold_lph
   flood_sensors: !input flood_sensors
   flood_action: !input flood_action
-  notify_device_primary: !input notify_device_primary
+  notify_device: !input notify_device
   notify_device_secondary: !input notify_device_secondary
   media_players: !input media_players
   soften_enabled: !input soften_enabled
@@ -156,21 +156,26 @@ action:
                   - service: automation.trigger
                     data: {}
                     entity_id: !input flood_action
-          - device_id: notify_device_primary
+          # powiadomienie główne
+          - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "💧 ZALANIE!"
-            message: "Wykryto zalanie: {{ state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}"
+            message: >
+              Wykryto zalanie: {{ state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}
+          # powiadomienie drugie (opcjonalne)
           - choose:
               - conditions:
                   - condition: template
                     value_template: "{{ notify_device_secondary != '' }}"
                 sequence:
-                  - device_id: notify_device_secondary
+                  - device_id: !input notify_device_secondary
                     domain: mobile_app
                     type: notify
                     title: "💧 ZALANIE!"
-                    message: "Wykryto zalanie: {{ state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}"
+                    message: >
+                      Wykryto zalanie: {{ state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}
+          # TTS (opcjonalnie)
           - choose:
               - conditions:
                   - condition: template
@@ -193,7 +198,7 @@ action:
           - condition: template
             value_template: "{{ not in_soften_window and water_hour_l > avg_hourly + leak_threshold_lph }}"
         sequence:
-          - device_id: notify_device_primary
+          - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "🚨 WYCIEK WODY"
@@ -203,7 +208,7 @@ action:
                   - condition: template
                     value_template: "{{ notify_device_secondary != '' }}"
                 sequence:
-                  - device_id: notify_device_secondary
+                  - device_id: !input notify_device_secondary
                     domain: mobile_app
                     type: notify
                     title: "🚨 WYCIEK WODY"
@@ -234,7 +239,7 @@ action:
                   - condition: template
                     value_template: "{{ soften_min_lph <= water_hour_l <= soften_max_lph }}"
                 sequence:
-                  - device_id: notify_device_primary
+                  - device_id: !input notify_device
                     domain: mobile_app
                     type: notify
                     title: "💧 Zmiękczacz w pracy"
@@ -244,7 +249,7 @@ action:
                   - condition: template
                     value_template: "{{ water_hour_l > avg_hourly + leak_threshold_lph }}"
                 sequence:
-                  - device_id: notify_device_primary
+                  - device_id: !input notify_device
                     domain: mobile_app
                     type: notify
                     title: "🚨 PODEJRZENIE WYCIEKU (godzinowe)"
@@ -280,7 +285,7 @@ action:
                   - condition: template
                     value_template: "{{ zero_hour_streak >= 3 }}"
                 sequence:
-                  - device_id: notify_device_primary
+                  - device_id: !input notify_device
                     domain: mobile_app
                     type: notify
                     title: "🚨 WYCIEK – nietypowe godziny"
