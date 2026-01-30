@@ -113,7 +113,10 @@ variables:
   now_time: "{{ now().strftime('%H:%M') }}"
   minute: "{{ now().minute }}"
   current_hour: "{{ now().hour }}"
-  in_soften_window: "{{ !input 'soften_enabled' and (now_time >= soften_start and now_time <= soften_end) }}"
+  soften_enabled: !input soften_enabled
+  soften_start: !input soften_start
+  soften_end: !input soften_end
+  in_soften_window: "{{ soften_enabled and soften_start <= now_time <= soften_end }}"
 
   water_hour_l: >-
     {% set raw = states(!input 'water_hour_meter') | float(0) %}
