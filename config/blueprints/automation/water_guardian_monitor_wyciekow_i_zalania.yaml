@@ -110,19 +110,37 @@ trigger:
     to: "on"
 
 variables:
-  now_time: "{{ now().strftime('%H:%M') }}"
-  minute: "{{ now().minute }}"
-  current_hour: "{{ now().hour }}"
+  # ===== Helpery i wejścia =====
+  water_hour_meter: !input water_hour_meter
+  leak_threshold_lph: !input leak_threshold_lph
+  flood_sensors: !input flood_sensors
+  flood_action: !input flood_action
+  notify_device_primary: !input notify_device_primary
+  notify_device_secondary: !input notify_device_secondary
+  media_players: !input media_players
   soften_enabled: !input soften_enabled
   soften_start: !input soften_start
   soften_end: !input soften_end
+  soften_min_lph: !input soften_min_lph
+  soften_max_lph: !input soften_max_lph
+
+  # ===== Czas i okno zmiękczacza =====
+  now_time: "{{ now().strftime('%H:%M') }}"
+  minute: "{{ now().minute }}"
+  current_hour: "{{ now().hour }}"
   in_soften_window: "{{ soften_enabled and soften_start <= now_time <= soften_end }}"
 
+  # ===== Zużycie godzinowe =====
   water_hour_l: >-
-    {% set raw = states(!input 'water_hour_meter') | float(0) %}
-    {% set unit = state_attr(!input 'water_hour_meter','unit_of_measurement') | lower %}
-    {% if unit in ['m³','m3','m^3'] %}{{ (raw*1000)|round(1) }}{% else %}{{ raw|round(1) }}{% endif %}
+    {% set raw = states(water_hour_meter) | float(0) %}
+    {% set unit = state_attr(water_hour_meter,'unit_of_measurement') | lower %}
+    {% if unit in ['m³','m3','m^3'] %}
+      {{ (raw*1000)|round(1) }}
+    {% else %}
+      {{ raw|round(1) }}
+    {% endif %}
 
+  # ===== Średnia EMA =====
   avg_hourly: "{{ states('input_number.zuzycie_wody_stat_' ~ current_hour) | float(0) }}"
   zero_hour_streak: "{{ states('input_number.water_zero_hour_streak') | int(0) }}"
 
@@ -132,17 +150,17 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ trigger.entity_id in !input 'flood_sensors' }}"
+            value_template: "{{ trigger.entity_id in flood_sensors }}"
         sequence:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ !input 'flood_action' | length > 0 }}"
+                    value_template: "{{ flood_action | length > 0 }}"
                 sequence:
                   - service: automation.trigger
                     target:
-                      entity_id: !input 'flood_action'
-          - device_id: !input 'notify_device_primary'
+                      entity_id: flood_action
+          - device_id: notify_device_primary
             domain: mobile_app
             type: notify
             title: "💧 ZALANIE!"
@@ -150,9 +168,9 @@ action:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ !input 'notify_device_secondary' != '' }}"
+                    value_template: "{{ notify_device_secondary != '' }}"
                 sequence:
-                  - device_id: !input 'notify_device_secondary'
+                  - device_id: notify_device_secondary
                     domain: mobile_app
                     type: notify
                     title: "💧 ZALANIE!"
@@ -178,7 +196,7 @@ action:
           - condition: template
             value_template: "{{ not in_soften_window and water_hour_l > avg_hourly + leak_threshold_lph }}"
         sequence:
-          - device_id: !input 'notify_device_primary'
+          - device_id: notify_device_primary
             domain: mobile_app
             type: notify
             title: "🚨 WYCIEK WODY"
@@ -186,9 +204,9 @@ action:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ !input 'notify_device_secondary' != '' }}"
+                    value_template: "{{ notify_device_secondary != '' }}"
                 sequence:
-                  - device_id: !input 'notify_device_secondary'
+                  - device_id: notify_device_secondary
                     domain: mobile_app
                     type: notify
                     title: "🚨 WYCIEK WODY"
@@ -219,7 +237,7 @@ action:
                   - condition: template
                     value_template: "{{ soften_min_lph <= water_hour_l <= soften_max_lph }}"
                 sequence:
-                  - device_id: !input 'notify_device_primary'
+                  - device_id: notify_device_primary
                     domain: mobile_app
                     type: notify
                     title: "💧 Zmiękczacz w pracy"
@@ -229,7 +247,7 @@ action:
                   - condition: template
                     value_template: "{{ water_hour_l > avg_hourly + leak_threshold_lph }}"
                 sequence:
-                  - device_id: !input 'notify_device_primary'
+                  - device_id: notify_device_primary
                     domain: mobile_app
                     type: notify
                     title: "🚨 PODEJRZENIE WYCIEKU (godzinowe)"
@@ -265,7 +283,7 @@ action:
                   - condition: template
                     value_template: "{{ zero_hour_streak >= 3 }}"
                 sequence:
-                  - device_id: !input 'notify_device_primary'
+                  - device_id: notify_device_primary
                     domain: mobile_app
                     type: notify
                     title: "🚨 WYCIEK – nietypowe godziny"
