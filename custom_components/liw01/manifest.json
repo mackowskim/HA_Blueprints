@@ -1,0 +1,13 @@
+{
+  "domain": "liw01",
+  "name": "LIW01 Water Guardian",
+  "version": "0.1.0",
+  "documentation": "https://github.com/mackowskim/HA_Blueprints",
+  "dependencies": ["mqtt"],
+  "requirements": [],
+  "codeowners": ["@mackowskim"],
+  "homeassistant": "2026.1.0",
+  "config_flow": false,
+  "iot_class": "local_push",
+  "categories": ["Water", "Sensor"]
+}
