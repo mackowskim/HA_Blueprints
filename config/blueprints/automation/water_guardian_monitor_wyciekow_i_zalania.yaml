@@ -1,10 +1,9 @@
 blueprint:
-  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97.4)
+  name: Water Guardian – Leak & Flood Detector v0.98
   description: >
     Detekcja wycieków i zalania z EMA godzinową,
     powiadomienia mobilne i TTS. Minutowa detekcja wycieku z cooldownem.
-    Wszystkie encje pomocnicze korzystają z helperów waterguard_liw01.
-    Drugie urządzenie do powiadomień jest opcjonalne.
+    Wszystkie helpery są neutralne, bez “liw01”.
 
   domain: automation
 
@@ -111,9 +110,9 @@ variables:
       {{ raw | round(1) }}
     {% endif %}
 
-  avg_hourly: "{{ states('input_number.waterguard_liw01_hour_' ~ current_hour) | float(0) }}"
-  zero_hour_streak: "{{ states('input_number.waterguard_liw01_zero_hour_streak') | int(0) }}"
-  last_alert: "{{ states('input_datetime.waterguard_liw01_last_alert') }}"
+  avg_hourly: "{{ states('input_number.water_hour_' ~ current_hour) | float(0) }}"
+  zero_hour_streak: "{{ states('input_number.zero_hour_streak') | int(0) }}"
+  last_alert: "{{ states('input_datetime.last_alert') }}"
 
   alert_allowed: >-
     {% if last_alert in ['unknown','unavailable',''] %}
@@ -142,7 +141,7 @@ action:
               {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
               {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
 
-          # Powiadomienie drugie, tylko jeśli ustawione
+          # Powiadomienie drugie, jeśli ustawione
           - choose:
               - conditions: "{{ notify_device_secondary | length > 0 }}"
                 sequence:
@@ -215,7 +214,7 @@ action:
           # Zapis czasu alertu
           - service: input_datetime.set_datetime
             target:
-              entity_id: input_datetime.waterguard_liw01_last_alert
+              entity_id: input_datetime.last_alert
             data:
               datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
 
@@ -228,13 +227,13 @@ action:
                 sequence:
                   - service: input_number.set_value
                     target:
-                      entity_id: input_number.waterguard_liw01_zero_hour_streak
+                      entity_id: input_number.zero_hour_streak
                     data:
                       value: "{{ zero_hour_streak + 1 }}"
             default:
               - service: input_number.set_value
                 target:
-                  entity_id: input_number.waterguard_liw01_zero_hour_streak
+                  entity_id: input_number.zero_hour_streak
                 data:
                   value: 0
 
