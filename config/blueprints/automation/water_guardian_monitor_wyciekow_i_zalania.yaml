@@ -1,9 +1,9 @@
 blueprint:
-  name: Water Guardian – Leak & Flood Detector v0.98
+  name: Water Guardian – Leak & Flood Detector v0.99
   description: >
     Detekcja wycieków i zalania z EMA godzinową,
     powiadomienia mobilne i TTS. Minutowa detekcja wycieku z cooldownem.
-    Wszystkie helpery są neutralne, bez “liw01”.
+    Wszystkie helpery są oparte na Water Guardian, bez „liw01”.
 
   domain: automation
 
@@ -110,9 +110,9 @@ variables:
       {{ raw | round(1) }}
     {% endif %}
 
-  avg_hourly: "{{ states('input_number.water_hour_' ~ current_hour) | float(0) }}"
-  zero_hour_streak: "{{ states('input_number.zero_hour_streak') | int(0) }}"
-  last_alert: "{{ states('input_datetime.last_alert') }}"
+  avg_hourly: "{{ states('input_number.waterguard_hour_' ~ current_hour) | float(0) }}"
+  zero_hour_streak: "{{ states('input_number.waterguard_zero_hour_streak') | int(0) }}"
+  last_alert: "{{ states('input_datetime.waterguard_last_alert') }}"
 
   alert_allowed: >-
     {% if last_alert in ['unknown','unavailable',''] %}
@@ -214,7 +214,7 @@ action:
           # Zapis czasu alertu
           - service: input_datetime.set_datetime
             target:
-              entity_id: input_datetime.last_alert
+              entity_id: input_datetime.waterguard_last_alert
             data:
               datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
 
@@ -227,13 +227,13 @@ action:
                 sequence:
                   - service: input_number.set_value
                     target:
-                      entity_id: input_number.zero_hour_streak
+                      entity_id: input_number.waterguard_zero_hour_streak
                     data:
                       value: "{{ zero_hour_streak + 1 }}"
             default:
               - service: input_number.set_value
                 target:
-                  entity_id: input_number.zero_hour_streak
+                  entity_id: input_number.waterguard_zero_hour_streak
                 data:
                   value: 0
 
