@@ -1,15 +1,15 @@
 blueprint:
-  name: Water Guardian – Leak & Flood Detector v0.99
+  name: Water Guardian – Leak & Flood Detector v1.0
   description: >
-    Detekcja wycieków i zalania z EMA godzinową,
-    powiadomienia mobilne i TTS. Minutowa detekcja wycieku z cooldownem.
-    Wszystkie helpery są oparte na Water Guardian, bez „liw01”.
+    Minutowa detekcja wycieku wody oparta o godzinowy utility_meter
+    oraz EMA 14-dniową per godzina.
+    Obsługa czujników zalania, zero-hour streak, powiadomienia mobilne i TTS.
 
   domain: automation
 
   input:
     water_hour_meter:
-      name: Utility meter – zużycie godzinowe (hourly)
+      name: Utility meter – zużycie godzinowe
       selector:
         entity:
           domain: sensor
@@ -33,13 +33,13 @@ blueprint:
           multiple: true
 
     flood_action:
-      name: Automatyzacja przy zalaniu (opcjonalnie)
+      name: Akcja przy zalaniu (opcjonalna)
       default: []
       selector:
         action: {}
 
     notify_device:
-      name: Urządzenie do powiadomień (główne)
+      name: Urządzenie powiadomień (główne)
       selector:
         device:
           integration: mobile_app
@@ -60,21 +60,21 @@ blueprint:
           multiple: true
 
     language:
-      name: Wersja językowa powiadomień
-      default: "PL"
+      name: Język komunikatów
+      default: PL
       selector:
         select:
           options: [PL, EN]
 
     leak_cooldown_minutes:
-      name: Cooldown minutowy alertu wycieku
+      name: Cooldown alertu wycieku
       default: 30
       selector:
         number:
           min: 1
           max: 120
           step: 1
-          unit_of_measurement: "min"
+          unit_of_measurement: min
 
 mode: single
 
@@ -87,24 +87,21 @@ trigger:
 
 variables:
   water_hour_meter: !input water_hour_meter
-  leak_threshold_lph: !input leak_threshold_lph
   flood_sensors: !input flood_sensors
-  flood_action: !input flood_action
-  notify_device: !input notify_device
+  leak_threshold_lph: !input leak_threshold_lph
+  leak_cooldown_minutes: !input leak_cooldown_minutes
   notify_device_secondary: !input notify_device_secondary
   media_players: !input media_players
   language: !input language
-  leak_cooldown_minutes: !input leak_cooldown_minutes
 
-  now_time: "{{ now().strftime('%H:%M') }}"
   minute: "{{ now().minute }}"
   current_hour: "{{ now().hour }}"
 
-  # ===== HOURLY WATER (NORMALIZED TO L) =====
+  # Aktualne zużycie godzinowe w litrach
   water_hour_l: >-
     {% set raw = states(water_hour_meter) | float(0) %}
-    {% set unit = state_attr(water_hour_meter, 'unit_of_measurement') | lower %}
-    {% if unit in ['m³','m3','m^3'] %}
+    {% set unit = state_attr(water_hour_meter,'unit_of_measurement') | lower %}
+    {% if unit in ['m3','m³','m^3'] %}
       {{ (raw * 1000) | round(1) }}
     {% else %}
       {{ raw | round(1) }}
@@ -118,30 +115,26 @@ variables:
     {% if last_alert in ['unknown','unavailable',''] %}
       true
     {% else %}
-      {{ (now().timestamp() - strptime(last_alert, '%Y-%m-%d %H:%M:%S').timestamp()) > leak_cooldown_minutes * 60 }}
+      {{ (now().timestamp() - strptime(last_alert,'%Y-%m-%d %H:%M:%S').timestamp())
+         > leak_cooldown_minutes * 60 }}
     {% endif %}
 
 action:
-  # ================== FLOOD ==================
+  # ================= FLOOD =================
   - choose:
       - conditions: "{{ trigger.entity_id in flood_sensors }}"
         sequence:
           - choose:
               - conditions: "{{ flood_action | length > 0 }}"
-                sequence:
-                  - service: automation.trigger
-                    entity_id: !input flood_action
+                sequence: !input flood_action
 
-          # Powiadomienie główne
           - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
             message: >
-              {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
               {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
 
-          # Powiadomienie drugie, jeśli ustawione
           - choose:
               - conditions: "{{ notify_device_secondary | length > 0 }}"
                 sequence:
@@ -149,32 +142,15 @@ action:
                     data:
                       title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
                       message: >
-                        {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
                         {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
-
-          # TTS na media players
-          - choose:
-              - conditions: "{{ media_players | length > 0 }}"
-                sequence:
-                  - repeat:
-                      for_each: "{{ media_players }}"
-                      sequence:
-                        - service: tts.google_say
-                          target:
-                            entity_id: "{{ repeat.item }}"
-                          data:
-                            language: "{{ 'pl' if language == 'PL' else 'en' }}"
-                            message: >
-                              {{ 'Uwaga! Wykryto zalanie.' if language == 'PL' else 'Warning! Flood detected.' }}
 
           - stop: "Flood handled"
 
-  # ================== LEAK (MINUTE) ==================
+  # ================= LEAK (MINUTOWY) =================
   - choose:
       - conditions: >
           {{ water_hour_l > avg_hourly + leak_threshold_lph and alert_allowed }}
         sequence:
-          # Główne powiadomienie
           - device_id: !input notify_device
             domain: mobile_app
             type: notify
@@ -183,7 +159,6 @@ action:
               {{ water_hour_l }} L/h >
               {{ avg_hourly }} + {{ leak_threshold_lph }} L
 
-          # Drugie powiadomienie tylko jeśli ustawione
           - choose:
               - conditions: "{{ notify_device_secondary | length > 0 }}"
                 sequence:
@@ -194,31 +169,13 @@ action:
                         {{ water_hour_l }} L/h >
                         {{ avg_hourly }} + {{ leak_threshold_lph }} L
 
-          # TTS
-          - choose:
-              - conditions: "{{ media_players | length > 0 }}"
-                sequence:
-                  - repeat:
-                      for_each: "{{ media_players }}"
-                      sequence:
-                        - service: tts.google_say
-                          target:
-                            entity_id: "{{ repeat.item }}"
-                          data:
-                            language: "{{ 'pl' if language == 'PL' else 'en' }}"
-                            message: >
-                              {{ 'Uwaga! Wykryto możliwy wyciek wody.'
-                                 if language == 'PL'
-                                 else 'Warning! Possible water leak detected.' }}
-
-          # Zapis czasu alertu
           - service: input_datetime.set_datetime
             target:
               entity_id: input_datetime.waterguard_last_alert
             data:
               datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
 
-  # ================== ZERO-HOUR STREAK ==================
+  # ================= ZERO-HOUR STREAK =================
   - choose:
       - conditions: "{{ minute == 59 }}"
         sequence:
@@ -236,4 +193,22 @@ action:
                   entity_id: input_number.waterguard_zero_hour_streak
                 data:
                   value: 0
+
+  # ================= EMA UPDATE (14-DNIOWA) =================
+  - choose:
+      - conditions: "{{ minute == 59 }}"
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: "input_number.waterguard_hour_{{ current_hour }}"
+            data:
+              value: >
+                {% set alpha = 2 / (14 + 1) %}
+                {% set ema_old = avg_hourly %}
+                {% set current = water_hour_l %}
+                {% if ema_old == 0 %}
+                  {{ current | round(1) }}
+                {% else %}
+                  {{ (alpha * current + (1 - alpha) * ema_old) | round(1) }}
+                {% endif %}
 
