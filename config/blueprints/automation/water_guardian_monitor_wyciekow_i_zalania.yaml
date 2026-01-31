@@ -1,9 +1,10 @@
 blueprint:
-  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97.3)
+  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97.4)
   description: >
     Detekcja wycieków i zalania z EMA godzinową,
     powiadomienia mobilne i TTS. Minutowa detekcja wycieku z cooldownem.
     Wszystkie encje pomocnicze korzystają z helperów waterguard_liw01.
+    Drugie urządzenie do powiadomień jest opcjonalne.
 
   domain: automation
 
@@ -145,13 +146,12 @@ action:
           - choose:
               - conditions: "{{ notify_device_secondary | length > 0 }}"
                 sequence:
-                  - device_id: !input notify_device_secondary
-                    domain: mobile_app
-                    type: notify
-                    title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
-                    message: >
-                      {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
-                      {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
+                  - service: notify.mobile_app_{{ notify_device_secondary }}
+                    data:
+                      title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
+                      message: >
+                        {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
+                        {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
 
           # TTS na media players
           - choose:
@@ -188,13 +188,12 @@ action:
           - choose:
               - conditions: "{{ notify_device_secondary | length > 0 }}"
                 sequence:
-                  - device_id: !input notify_device_secondary
-                    domain: mobile_app
-                    type: notify
-                    title: "{{ '🚨 WYCIEK WODY' if language == 'PL' else '🚨 WATER LEAK' }}"
-                    message: >
-                      {{ water_hour_l }} L/h >
-                      {{ avg_hourly }} + {{ leak_threshold_lph }} L
+                  - service: notify.mobile_app_{{ notify_device_secondary }}
+                    data:
+                      title: "{{ '🚨 WYCIEK WODY' if language == 'PL' else '🚨 WATER LEAK' }}"
+                      message: >
+                        {{ water_hour_l }} L/h >
+                        {{ avg_hourly }} + {{ leak_threshold_lph }} L
 
           # TTS
           - choose:
