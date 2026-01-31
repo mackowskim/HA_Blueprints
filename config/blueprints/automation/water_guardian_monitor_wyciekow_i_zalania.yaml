@@ -1,5 +1,5 @@
 blueprint:
-  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97)
+  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97.1)
   description: >
     Detekcja wycieków i zalania z EMA godzinową,
     powiadomienia mobilne i TTS. Minutowa detekcja wycieku z cooldownem.
@@ -81,7 +81,6 @@ mode: single
 trigger:
   - platform: time_pattern
     minutes: "/1"
-
   - platform: state
     entity_id: !input flood_sensors
     to: "on"
@@ -101,7 +100,7 @@ variables:
   minute: "{{ now().minute }}"
   current_hour: "{{ now().hour }}"
 
-  # === HOURLY WATER (NORMALIZED TO L) ===
+  # ===== HOURLY WATER (NORMALIZED TO L) =====
   water_hour_l: >-
     {% set raw = states(water_hour_meter) | float(0) %}
     {% set unit = state_attr(water_hour_meter, 'unit_of_measurement') | lower %}
@@ -119,8 +118,7 @@ variables:
     {% if last_alert in ['unknown','unavailable',''] %}
       true
     {% else %}
-      {{ (now().timestamp() - strptime(last_alert, '%Y-%m-%d %H:%M:%S').timestamp())
-         > leak_cooldown_minutes * 60 }}
+      {{ (now().timestamp() - strptime(last_alert, '%Y-%m-%d %H:%M:%S').timestamp()) > leak_cooldown_minutes * 60 }}
     {% endif %}
 
 action:
@@ -152,6 +150,20 @@ action:
                     message: >
                       {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
                       {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
+
+          - choose:
+              - conditions: "{{ media_players | length > 0 }}"
+                sequence:
+                  - repeat:
+                      for_each: "{{ media_players }}"
+                      sequence:
+                        - service: tts.google_say
+                          target:
+                            entity_id: "{{ repeat.item }}"
+                          data:
+                            language: "{{ 'pl' if language == 'PL' else 'en' }}"
+                            message: >
+                              {{ 'Uwaga! Wykryto zalanie.' if language == 'PL' else 'Warning! Flood detected.' }}
 
           - stop: "Flood handled"
 
@@ -213,10 +225,10 @@ action:
                       entity_id: input_number.waterguard_liw01_zero_hour_streak
                     data:
                       value: "{{ zero_hour_streak + 1 }}"
-              - default:
-                  - service: input_number.set_value
-                    target:
-                      entity_id: input_number.waterguard_liw01_zero_hour_streak
-                    data:
-                      value: 0
+            default:
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.waterguard_liw01_zero_hour_streak
+                data:
+                  value: 0
 
