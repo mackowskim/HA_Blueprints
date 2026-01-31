@@ -1,9 +1,9 @@
 blueprint:
-  name: Water Guardian – Leak & Flood Detector LIW01 (v0.96)
+  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97)
   description: >
     Detekcja wycieków i zalania z EMA godzinową,
-    powiadomienia mobilne i TTS. Minutowa detekcja wycieku z cooldownem 30 min.
-    Wszystkie encje korzystają z dedykowanych helperów waterguard_liw01.
+    powiadomienia mobilne i TTS. Minutowa detekcja wycieku z cooldownem.
+    Wszystkie encje pomocnicze korzystają z helperów waterguard_liw01.
 
   domain: automation
 
@@ -64,9 +64,7 @@ blueprint:
       default: "PL"
       selector:
         select:
-          options:
-            - PL
-            - EN
+          options: [PL, EN]
 
     leak_cooldown_minutes:
       name: Cooldown minutowy alertu wycieku
@@ -83,6 +81,7 @@ mode: single
 trigger:
   - platform: time_pattern
     minutes: "/1"
+
   - platform: state
     entity_id: !input flood_sensors
     to: "on"
@@ -102,10 +101,10 @@ variables:
   minute: "{{ now().minute }}"
   current_hour: "{{ now().hour }}"
 
-  # Przeliczenie jednostki – używa helpera waterguard_liw01_hourly_meter
+  # === HOURLY WATER (NORMALIZED TO L) ===
   water_hour_l: >-
-    {% set raw = states('sensor.waterguard_liw01_hourly_meter') | float(0) %}
-    {% set unit = state_attr('sensor.waterguard_liw01_total_meter','unit_of_measurement') | lower %}
+    {% set raw = states(water_hour_meter) | float(0) %}
+    {% set unit = state_attr(water_hour_meter, 'unit_of_measurement') | lower %}
     {% if unit in ['m³','m3','m^3'] %}
       {{ (raw * 1000) | round(1) }}
     {% else %}
@@ -115,15 +114,17 @@ variables:
   avg_hourly: "{{ states('input_number.waterguard_liw01_hour_' ~ current_hour) | float(0) }}"
   zero_hour_streak: "{{ states('input_number.waterguard_liw01_zero_hour_streak') | int(0) }}"
   last_alert: "{{ states('input_datetime.waterguard_liw01_last_alert') }}"
+
   alert_allowed: >-
     {% if last_alert in ['unknown','unavailable',''] %}
       true
     {% else %}
-      {{ (now().timestamp() - strptime(last_alert, '%Y-%m-%d %H:%M:%S').timestamp()) > leak_cooldown_minutes*60 }}
+      {{ (now().timestamp() - strptime(last_alert, '%Y-%m-%d %H:%M:%S').timestamp())
+         > leak_cooldown_minutes * 60 }}
     {% endif %}
 
 action:
-  # ===== ZALANIE =====
+  # ================== FLOOD ==================
   - choose:
       - conditions: "{{ trigger.entity_id in flood_sensors }}"
         sequence:
@@ -133,18 +134,13 @@ action:
                   - service: automation.trigger
                     entity_id: !input flood_action
 
-          # powiadomienia
           - device_id: !input notify_device
             domain: mobile_app
             type: notify
-            title: >
-              {% if language == 'PL' %}💧 ZALANIE!{% else %}💧 FLOOD!{% endif %}
+            title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
             message: >
-              {% if language == 'PL' %}
-                Wykryto zalanie: {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
-              {% else %}
-                Flood detected: {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
-              {% endif %}
+              {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
+              {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
 
           - choose:
               - conditions: "{{ notify_device_secondary != '' }}"
@@ -152,52 +148,25 @@ action:
                   - device_id: !input notify_device_secondary
                     domain: mobile_app
                     type: notify
-                    title: >
-                      {% if language == 'PL' %}💧 ZALANIE!{% else %}💧 FLOOD!{% endif %}
+                    title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
                     message: >
-                      {% if language == 'PL' %}
-                        Wykryto zalanie: {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
-                      {% else %}
-                        Flood detected: {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
-                      {% endif %}
+                      {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
+                      {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
 
-          - choose:
-              - conditions: "{{ media_players | length > 0 }}"
-                sequence:
-                  - repeat:
-                      for_each: "{{ media_players }}"
-                      sequence:
-                        - service: tts.google_say
-                          target:
-                            entity_id: "{{ repeat.item }}"
-                          data:
-                            language: "{% if language == 'PL' %}pl{% else %}en{% endif %}"
-                            message: >
-                              {% if language == 'PL' %}
-                                Uwaga! Wykryto zalanie.
-                              {% else %}
-                                Warning! Flood detected.
-                              {% endif %}
+          - stop: "Flood handled"
 
-          - stop: "Zalanie – zakończenie automatyzacji"
-
-  # ===== MINUTOWA DETEKCJA WYCIEKU =====
+  # ================== LEAK (MINUTE) ==================
   - choose:
       - conditions: >
           {{ water_hour_l > avg_hourly + leak_threshold_lph and alert_allowed }}
         sequence:
-          # powiadomienia
           - device_id: !input notify_device
             domain: mobile_app
             type: notify
-            title: >
-              {% if language == 'PL' %}🚨 WYCIEK WODY{% else %}🚨 WATER LEAK{% endif %}
+            title: "{{ '🚨 WYCIEK WODY' if language == 'PL' else '🚨 WATER LEAK' }}"
             message: >
-              {% if language == 'PL' %}
-                Zużycie {{ water_hour_l | round(1) }} L/h przekracza średnią {{ avg_hourly | round(1) }} + próg {{ leak_threshold_lph }} L
-              {% else %}
-                Consumption {{ water_hour_l | round(1) }} L/h exceeds average {{ avg_hourly | round(1) }} + threshold {{ leak_threshold_lph }} L
-              {% endif %}
+              {{ water_hour_l }} L/h >
+              {{ avg_hourly }} + {{ leak_threshold_lph }} L
 
           - choose:
               - conditions: "{{ notify_device_secondary != '' }}"
@@ -205,14 +174,10 @@ action:
                   - device_id: !input notify_device_secondary
                     domain: mobile_app
                     type: notify
-                    title: >
-                      {% if language == 'PL' %}🚨 WYCIEK WODY{% else %}🚨 WATER LEAK{% endif %}
+                    title: "{{ '🚨 WYCIEK WODY' if language == 'PL' else '🚨 WATER LEAK' }}"
                     message: >
-                      {% if language == 'PL' %}
-                        Zużycie {{ water_hour_l | round(1) }} L/h przekracza średnią {{ avg_hourly | round(1) }} + próg {{ leak_threshold_lph }} L
-                      {% else %}
-                        Consumption {{ water_hour_l | round(1) }} L/h exceeds average {{ avg_hourly | round(1) }} + threshold {{ leak_threshold_lph }} L
-                      {% endif %}
+                      {{ water_hour_l }} L/h >
+                      {{ avg_hourly }} + {{ leak_threshold_lph }} L
 
           - choose:
               - conditions: "{{ media_players | length > 0 }}"
@@ -224,22 +189,19 @@ action:
                           target:
                             entity_id: "{{ repeat.item }}"
                           data:
-                            language: "{% if language == 'PL' %}pl{% else %}en{% endif %}"
+                            language: "{{ 'pl' if language == 'PL' else 'en' }}"
                             message: >
-                              {% if language == 'PL' %}
-                                Uwaga! Wykryto możliwy wyciek wody.
-                              {% else %}
-                                Warning! Possible water leak detected.
-                              {% endif %}
+                              {{ 'Uwaga! Wykryto możliwy wyciek wody.'
+                                 if language == 'PL'
+                                 else 'Warning! Possible water leak detected.' }}
 
-          # zapis czasu alertu
           - service: input_datetime.set_datetime
             target:
               entity_id: input_datetime.waterguard_liw01_last_alert
             data:
               datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
 
-  # ===== GODZINY HISTORYCZNIE ZEROWE – 3x =====
+  # ================== ZERO-HOUR STREAK ==================
   - choose:
       - conditions: "{{ minute == 59 }}"
         sequence:
@@ -251,8 +213,7 @@ action:
                       entity_id: input_number.waterguard_liw01_zero_hour_streak
                     data:
                       value: "{{ zero_hour_streak + 1 }}"
-              - conditions: "{{ not (avg_hourly == 0 and water_hour_l > 0) }}"
-                sequence:
+              - default:
                   - service: input_number.set_value
                     target:
                       entity_id: input_number.waterguard_liw01_zero_hour_streak
