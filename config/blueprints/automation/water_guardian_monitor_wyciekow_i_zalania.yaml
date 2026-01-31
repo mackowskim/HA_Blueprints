@@ -1,5 +1,5 @@
 blueprint:
-  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97.2)
+  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97.3)
   description: >
     Detekcja wycieków i zalania z EMA godzinową,
     powiadomienia mobilne i TTS. Minutowa detekcja wycieku z cooldownem.
@@ -133,7 +133,7 @@ action:
                     entity_id: !input flood_action
 
           # Powiadomienie główne
-          - device_id: "{{ notify_device }}"
+          - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
@@ -145,7 +145,7 @@ action:
           - choose:
               - conditions: "{{ notify_device_secondary | length > 0 }}"
                 sequence:
-                  - device_id: "{{ notify_device_secondary }}"
+                  - device_id: !input notify_device_secondary
                     domain: mobile_app
                     type: notify
                     title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
@@ -176,7 +176,7 @@ action:
           {{ water_hour_l > avg_hourly + leak_threshold_lph and alert_allowed }}
         sequence:
           # Główne powiadomienie
-          - device_id: "{{ notify_device }}"
+          - device_id: !input notify_device
             domain: mobile_app
             type: notify
             title: "{{ '🚨 WYCIEK WODY' if language == 'PL' else '🚨 WATER LEAK' }}"
@@ -188,7 +188,7 @@ action:
           - choose:
               - conditions: "{{ notify_device_secondary | length > 0 }}"
                 sequence:
-                  - device_id: "{{ notify_device_secondary }}"
+                  - device_id: !input notify_device_secondary
                     domain: mobile_app
                     type: notify
                     title: "{{ '🚨 WYCIEK WODY' if language == 'PL' else '🚨 WATER LEAK' }}"
