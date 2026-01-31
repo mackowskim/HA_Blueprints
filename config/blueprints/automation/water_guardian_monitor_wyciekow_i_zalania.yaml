@@ -1,5 +1,5 @@
 blueprint:
-  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97.1)
+  name: Water Guardian – Leak & Flood Detector LIW01 (v0.97.2)
   description: >
     Detekcja wycieków i zalania z EMA godzinową,
     powiadomienia mobilne i TTS. Minutowa detekcja wycieku z cooldownem.
@@ -132,7 +132,8 @@ action:
                   - service: automation.trigger
                     entity_id: !input flood_action
 
-          - device_id: !input notify_device
+          # Powiadomienie główne
+          - device_id: "{{ notify_device }}"
             domain: mobile_app
             type: notify
             title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
@@ -140,10 +141,11 @@ action:
               {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
               {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
 
+          # Powiadomienie drugie, tylko jeśli ustawione
           - choose:
-              - conditions: "{{ notify_device_secondary != '' }}"
+              - conditions: "{{ notify_device_secondary | length > 0 }}"
                 sequence:
-                  - device_id: !input notify_device_secondary
+                  - device_id: "{{ notify_device_secondary }}"
                     domain: mobile_app
                     type: notify
                     title: "{{ '💧 ZALANIE!' if language == 'PL' else '💧 FLOOD!' }}"
@@ -151,6 +153,7 @@ action:
                       {{ 'Wykryto zalanie: ' if language == 'PL' else 'Flood detected: ' }}
                       {{ state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }}
 
+          # TTS na media players
           - choose:
               - conditions: "{{ media_players | length > 0 }}"
                 sequence:
@@ -172,7 +175,8 @@ action:
       - conditions: >
           {{ water_hour_l > avg_hourly + leak_threshold_lph and alert_allowed }}
         sequence:
-          - device_id: !input notify_device
+          # Główne powiadomienie
+          - device_id: "{{ notify_device }}"
             domain: mobile_app
             type: notify
             title: "{{ '🚨 WYCIEK WODY' if language == 'PL' else '🚨 WATER LEAK' }}"
@@ -180,10 +184,11 @@ action:
               {{ water_hour_l }} L/h >
               {{ avg_hourly }} + {{ leak_threshold_lph }} L
 
+          # Drugie powiadomienie tylko jeśli ustawione
           - choose:
-              - conditions: "{{ notify_device_secondary != '' }}"
+              - conditions: "{{ notify_device_secondary | length > 0 }}"
                 sequence:
-                  - device_id: !input notify_device_secondary
+                  - device_id: "{{ notify_device_secondary }}"
                     domain: mobile_app
                     type: notify
                     title: "{{ '🚨 WYCIEK WODY' if language == 'PL' else '🚨 WATER LEAK' }}"
@@ -191,6 +196,7 @@ action:
                       {{ water_hour_l }} L/h >
                       {{ avg_hourly }} + {{ leak_threshold_lph }} L
 
+          # TTS
           - choose:
               - conditions: "{{ media_players | length > 0 }}"
                 sequence:
@@ -207,6 +213,7 @@ action:
                                  if language == 'PL'
                                  else 'Warning! Possible water leak detected.' }}
 
+          # Zapis czasu alertu
           - service: input_datetime.set_datetime
             target:
               entity_id: input_datetime.waterguard_liw01_last_alert
